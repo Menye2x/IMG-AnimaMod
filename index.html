@@ -1,0 +1,1279 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="description" content="Animated GIF/WebP viewer and frame modifier — single-file HTML app." />
+<title>MotionFrame — GIF & WebP Frame Tool</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0b0d12;
+    --panel: rgba(19, 23, 31, .86);
+    --panel-2: rgba(25, 30, 41, .92);
+    --line: rgba(255,255,255,.10);
+    --line-strong: rgba(255,255,255,.16);
+    --text: #f2f4f8;
+    --muted: #9ea7b5;
+    --accent: #7aa2ff;
+    --accent-2: #9d7aff;
+    --success: #64d69c;
+    --danger: #ff7b8f;
+    --shadow: 0 20px 60px rgba(0,0,0,.32);
+    --radius: 18px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  button, input, select { font: inherit; }
+  button { color: inherit; }
+  .app { min-height: 100vh; display: flex; flex-direction: column; }
+  .topbar {
+    height: 70px; padding: 0 22px; display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid var(--line); background: rgba(11,13,18,.84); backdrop-filter: blur(18px); position: sticky; top: 0; z-index: 20;
+  }
+  .brand { display:flex; align-items:center; gap: 11px; font-weight: 780; letter-spacing: -.02em; }
+  .brand-mark { width: 34px; height: 34px; border-radius: 10px; display:grid; place-items:center; background: linear-gradient(135deg,var(--accent),var(--accent-2)); color:white; box-shadow: 0 9px 24px rgba(122,162,255,.18); }
+  .brand-sub { color: var(--muted); font-weight: 600; font-size: 12px; margin-left: 2px; }
+  .mode-switch { display:flex; gap: 4px; padding: 4px; border:1px solid var(--line); background: rgba(255,255,255,.04); border-radius: 14px; }
+  .mode-btn { border:0; background:transparent; padding: 9px 15px; border-radius:10px; cursor:pointer; font-size:13px; font-weight:700; color:var(--muted); }
+  .mode-btn.active { background: rgba(255,255,255,.10); color: var(--text); }
+  main { width:min(1500px, 100%); margin:0 auto; padding:28px; flex:1; display:grid; grid-template-columns:minmax(0,1fr) 360px; gap:24px; }
+  .workspace { min-width:0; display:flex; flex-direction:column; gap:22px; }
+  .side { min-width:0; display:flex; flex-direction:column; gap:22px; }
+  .panel { background:var(--panel); margin:0;  border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden; }
+  .panel-head { padding:18px 20px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; gap:12px; }
+  .panel-title { font-size:13px; font-weight:800; letter-spacing:.02em; }
+  .panel-sub { font-size:12px; color:var(--muted); }
+  .viewer-panel { min-height: 505px; display:flex; flex-direction:column; }
+  .stage-wrap { padding:24px; flex:1; display:grid; place-items:center; min-height: 410px; }
+  .stage {
+    contain: paint layout;
+    width:min(100%, 920px); aspect-ratio: 16/9; border-radius:16px; border:1px solid var(--line);
+    background:
+      linear-gradient(45deg, rgba(255,255,255,.035) 25%, transparent 25%) 0 0/20px 20px,
+      linear-gradient(-45deg, rgba(255,255,255,.035) 25%, transparent 25%) 0 0/20px 20px,
+      linear-gradient(45deg, transparent 75%, rgba(255,255,255,.035) 75%) 0 0/20px 20px,
+      linear-gradient(-45deg, transparent 75%, rgba(255,255,255,.035) 75%) 0 0/20px 20px,
+      #0f131a;
+    position:relative; display:grid; place-items:center; overflow:hidden;
+  }
+  .stage canvas { width:auto; height:auto; max-width:100%; max-height:100%; object-fit:contain; display:block; image-rendering:auto; contain:paint; }
+  .empty { text-align:center; color:var(--muted); padding:30px; }
+  .empty strong { color:var(--text); display:block; font-size:16px; margin-bottom:7px; }
+  .empty span { display:block; font-size:12px; line-height:1.6; }
+  .player { border-top:1px solid var(--line); padding:16px 20px 18px; display:grid; gap:10px; }
+  .timeline-row { display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:12px; }
+  .icon-btn, .btn {
+    border:1px solid var(--line); background:rgba(255,255,255,.045); border-radius:11px; cursor:pointer; transition:.18s ease; }
+  .btn { padding:9px 12px; font-size:12px; font-weight:750; }
+  .icon-btn { width:38px; height:38px; display:grid; place-items:center; }
+  .play-btn { width:42px; height:42px; font-size:15px; }
+  .play-btn .fa-solid { line-height:1; }
+  .icon-btn:hover, .btn:hover { transform:translateY(-1px); border-color:var(--line-strong); background:rgba(255,255,255,.075); }
+  .btn.primary { background:linear-gradient(135deg, rgba(122,162,255,.95), rgba(157,122,255,.95)); border-color:transparent; color:#fff; }
+  .btn.success { border-color:rgba(100,214,156,.3); color:#c7f7df; }
+  .btn.danger { border-color:rgba(255,123,143,.28); color:#ffc6cf; }
+  .range { width:100%; accent-color:var(--accent); cursor:pointer; }
+  .player-meta { display:flex; justify-content:space-between; gap:10px; color:var(--muted); font-size:11px; }
+  .frame-strip { padding:20px 20px 22px; border-top:1px solid var(--line); }
+  .strip-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; gap:10px; }
+  .strip-scroll { overflow:auto; display:flex; gap:8px; padding-bottom:2px; }
+  .thumb {
+    flex:0 0 88px; height:66px; border:1px solid var(--line); border-radius:10px; background:#10141b; position:relative; cursor:pointer; overflow:hidden; padding:0;
+  }
+  .thumb.active { border-color:var(--accent); box-shadow:0 0 0 2px rgba(122,162,255,.2); }
+  .thumb canvas { width:100%; height:100%; object-fit:contain; display:block; }
+  .thumb-label { position:absolute; left:6px; bottom:5px; font-size:10px; line-height:1; padding:4px 5px; border-radius:6px; background:rgba(0,0,0,.62); color:#fff; }
+  .drop-zone { padding:20px; border:1px dashed rgba(255,255,255,.16); border-radius:14px; margin:22px; text-align:center; color:var(--muted); transition:.18s; }
+  .drop-zone.drag { border-color:var(--accent); background:rgba(122,162,255,.07); color:var(--text); }
+  .drop-zone strong { color:var(--text); }
+  .drop-zone input { display:none; }
+  .drop-actions { display:flex; justify-content:center; gap:8px; margin-top:10px; flex-wrap:wrap; }
+  .info-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:20px; }
+  .info { padding:13px 14px; border:1px solid var(--line); border-radius:12px; background:rgba(255,255,255,.025); min-width:0; }
+  .info span { color:var(--muted); display:block; font-size:10px; text-transform:uppercase; letter-spacing:.08em; margin-bottom:5px; }
+  .info strong { display:block; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .toolbar { display:grid; grid-template-columns:1fr 1fr; gap:10px; padding:20px; }
+  .export-btn { min-width:0; }
+  .export-btn-content { display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:3px; width:100%; }
+  .export-btn-main { display:inline-flex; align-items:center; gap:8px; width:100%; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .export-estimate { display:block; width:100%; color:var(--muted); font-size:10px; font-weight:700; line-height:1.2; white-space:nowrap; text-align:left; }
+  .btn.primary .export-estimate, .btn.success .export-estimate { color:rgba(255,255,255,.84); }
+  .estimate-status { min-height:16px; margin-top:8px; }
+  .section-body { padding:20px; }
+  .field { margin-bottom:18px; }
+  .field:last-child { margin-bottom:0; }
+  .field label { display:flex; justify-content:space-between; gap:12px; color:var(--muted); font-size:11px; margin-bottom:7px; }
+  .field input[type="number"], .field input[type="text"], .field select {
+    width:100%; padding:9px 10px; border-radius:10px; border:1px solid var(--line); background:#0f131a; color:var(--text); outline:none;
+  }
+  .small-note { color:var(--muted); font-size:10px; line-height:1.55; }
+  .replace-box { border:1px solid rgba(122,162,255,.16); background:rgba(122,162,255,.045); border-radius:14px; padding:12px; }
+  .replace-box .ratio-line { display:flex; justify-content:space-between; gap:10px; align-items:center; font-size:11px; }
+  .ratio-badge { font-size:10px; border-radius:999px; padding:4px 7px; background:rgba(255,255,255,.07); color:var(--muted); }
+  .ratio-badge.ok { color:#baf2d3; background:rgba(100,214,156,.12); }
+  .ratio-badge.bad { color:#ffd0d7; background:rgba(255,123,143,.12); }
+  .footer { padding:22px 28px 28px; color:var(--muted); font-size:11px; text-align:center; }
+  .footer a { color:inherit; }
+  .mode-only { display:none; }
+  body.modify .mode-only { display:block; }
+  .view-only { display:block; }
+  body.modify .view-only { display:none; }
+  .toast { position:fixed; right:18px; bottom:18px; z-index:50; transform:translateY(18px); opacity:0; pointer-events:none; transition:.25s ease; max-width:390px; padding:12px 14px; border:1px solid var(--line); background:rgba(18,22,30,.94); backdrop-filter:blur(16px); border-radius:12px; box-shadow:var(--shadow); font-size:12px; }
+  .toast.show { transform:translateY(0); opacity:1; }
+  .toast.success { border-color:rgba(100,214,156,.3); }
+  .toast.error { border-color:rgba(255,123,143,.35); }
+  .modal-backdrop { display:none; position:fixed; inset:0; z-index:60; background:rgba(0,0,0,.58); backdrop-filter:blur(8px); place-items:center; padding:18px; }
+  .modal-backdrop.show { display:grid; }
+  .modal { width:min(520px,100%); background:#141922; border:1px solid var(--line-strong); border-radius:18px; box-shadow:var(--shadow); overflow:hidden; }
+  .modal-head { padding:15px 16px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; }
+  .modal-body { padding:16px; }
+  .modal-foot { padding:14px 16px; border-top:1px solid var(--line); display:flex; justify-content:flex-end; gap:8px; }
+  .status { font-size:11px; color:var(--muted); margin-top:8px; min-height:16px; }
+  .kbd { display:inline-block; padding:2px 5px; border:1px solid var(--line); border-radius:5px; color:var(--muted); font-size:10px; }
+  .toolbox { padding:20px; display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .session-actions .btn { min-height:42px; }
+  .save-indicator { display:inline-flex; align-items:center; gap:6px; }
+  .save-dot { width:7px; height:7px; border-radius:50%; background:var(--success); box-shadow:0 0 0 3px rgba(100,214,156,.08); }
+  .selected-frame-summary { display:grid; grid-template-columns:1fr 1.35fr 1fr; gap:10px; margin-bottom:12px; }
+  .selected-frame-summary > div { padding:11px 12px; border:1px solid var(--line); border-radius:12px; background:rgba(255,255,255,.025); min-width:0; }
+  .selected-frame-summary span { display:block; color:var(--muted); font-size:10px; text-transform:uppercase; letter-spacing:.08em; margin-bottom:5px; }
+  .selected-frame-summary strong { display:block; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .selected-frame-summary small { display:block; color:var(--muted); font-size:10px; margin-top:2px; }
+  .selected-frame-export { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:18px; }
+  .export-settings { padding-bottom:16px; }
+  .export-settings .field { margin-bottom:0; }
+  .export-settings select { min-height:40px; }
+  .quality-row { display:grid; grid-template-columns:1fr auto; gap:12px; align-items:center; }
+  .quality-value { min-width:58px; text-align:right; font-size:12px; font-weight:800; color:var(--text); }
+  .quality-note { margin-top:7px; color:var(--muted); font-size:10px; line-height:1.55; }
+  .delay-all-btn { width:100%; margin-top:9px; min-height:38px; display:flex; align-items:center; justify-content:center; gap:7px; }
+  .delay-all-btn i { font-size:12px; }
+  .delay-all-note { margin-top:7px; }
+  .radio-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .radio-card { position:relative; display:block; margin:0; cursor:pointer; }
+  .radio-card input { position:absolute; opacity:0; pointer-events:none; }
+  .radio-card-body { min-height:58px; display:flex; align-items:center; gap:11px; padding:11px 12px; border:1px solid var(--line); border-radius:12px; background:rgba(255,255,255,.025); transition:border-color .18s ease, background .18s ease, box-shadow .18s ease; }
+  .radio-card-body > i { width:18px; text-align:center; color:var(--muted); }
+  .radio-card-body span { display:flex; flex-direction:column; gap:2px; min-width:0; }
+  .radio-card-body strong { font-size:12px; color:var(--text); }
+  .radio-card-body small { font-size:10px; color:var(--muted); }
+  .radio-card input:checked + .radio-card-body { border-color:var(--accent); background:rgba(122,162,255,.08); box-shadow:0 0 0 2px rgba(122,162,255,.10); }
+  .radio-card input:checked + .radio-card-body > i { color:var(--accent); }
+  @media (max-width:700px){ .selected-frame-summary{grid-template-columns:1fr 1fr;} .selected-frame-summary > div:last-child{grid-column:1/-1;} .selected-frame-export{grid-template-columns:1fr;} }
+  .modal-body + .modal-foot { margin-top:0; }
+
+  .progress-modal { width:min(460px,100%); }
+  .progress-modal .modal-body { padding:24px; }
+  .progress-title { display:flex; align-items:center; gap:10px; font-size:15px; font-weight:800; }
+  .progress-icon { width:34px; height:34px; border-radius:10px; display:grid; place-items:center; background:rgba(122,162,255,.12); color:var(--accent); flex:0 0 auto; }
+  .progress-icon i { animation: progressSpin 1s linear infinite; }
+  .progress-label { margin-top:14px; color:var(--muted); font-size:12px; line-height:1.5; }
+  .progress-track { height:8px; margin-top:16px; border-radius:999px; background:rgba(255,255,255,.07); overflow:hidden; }
+  .progress-fill { width:0%; height:100%; border-radius:inherit; background:linear-gradient(90deg,var(--accent),var(--accent-2)); transition:width .15s ease; }
+  .progress-meta { display:flex; justify-content:space-between; gap:12px; margin-top:9px; color:var(--muted); font-size:10px; }
+  @keyframes progressSpin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }
+  @media (max-width:700px){ .toolbox{grid-template-columns:1fr 1fr;} .session-actions{grid-template-columns:1fr 1fr;} }
+
+  @media (max-width: 1050px) {
+    main { grid-template-columns: 1fr; }
+    .side { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
+    .side .panel:first-child { grid-column:1/-1; }
+  }
+  @media (max-width: 700px) {
+    .topbar { height:auto; padding:12px; gap:10px; align-items:flex-start; }
+    .brand-sub { display:none; }
+    main { padding:16px; gap:16px; }
+    .side { display:flex; gap:16px; }
+    .viewer-panel { min-height:0; }
+    .stage-wrap { min-height:300px; padding:12px; }
+    .timeline-row { grid-template-columns:auto 1fr; }
+    .timeline-row .time-readout { grid-column:1/-1; justify-self:end; }
+    .info-grid { grid-template-columns:1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">M</div>
+      <div>MotionFrame <span class="brand-sub">GIF & WebP animation tool</span></div>
+    </div>
+    <div class="mode-switch" aria-label="Mode switch">
+      <button class="mode-btn active" id="viewModeBtn" type="button">VIEW</button>
+      <button class="mode-btn" id="modifyModeBtn" type="button">MODIFY</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="workspace">
+      <div class="panel viewer-panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">Animation Preview</div>
+            <div class="panel-sub" id="fileTitle">No animation loaded</div>
+          </div>
+          <button class="btn" id="openBtn" type="button">Import GIF / WebP</button>
+          <input id="fileInput" type="file" accept="image/gif,image/webp,.gif,.webp" hidden>
+        </div>
+
+        <div class="drop-zone" id="dropZone">
+          <strong>Drop an animated GIF or WebP here</strong>
+          <div>Decoding stays local in your browser session — no decoder service is required.</div>
+          <div class="drop-actions"><button class="btn primary" id="dropOpenBtn" type="button">Choose File</button></div>
+          <div class="status" id="loadStatus"></div>
+        </div>
+
+        <div class="stage-wrap">
+          <div class="stage" id="stage">
+            <div class="empty" id="emptyState">
+              <strong>Nothing to preview</strong>
+              <span>Import a GIF or WebP animation to start.<br>Modern Chromium browsers are recommended.</span>
+            </div>
+            <canvas id="mainCanvas" hidden></canvas>
+          </div>
+        </div>
+
+        <div class="player view-only">
+          <div class="timeline-row">
+            <button class="icon-btn play-btn" id="playBtn" type="button" title="Play" aria-label="Play"><i class="fa-solid fa-play" aria-hidden="true"></i></button>
+            <input class="range" id="timeline" type="range" min="0" max="0" value="0" step="1" aria-label="Frame timeline">
+            <div class="time-readout" id="timeReadout">00:00 / 00:00</div>
+          </div>
+          <div class="player-meta">
+            <span id="playerFrameInfo">Frame —</span>
+            <span id="loopInfo">Loop —</span>
+          </div>
+        </div>
+
+        <div class="frame-strip">
+          <div class="strip-head">
+            <div class="panel-title">Frames</div>
+            <div class="panel-sub" id="stripCount">0 frames</div>
+          </div>
+          <div class="strip-scroll" id="thumbStrip"></div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="side">
+      <div class="panel">
+        <div class="panel-head"><div><div class="panel-title">Animation Information</div><div class="panel-sub">Source & selected frame</div></div></div>
+        <div class="info-grid">
+          <div class="info"><span>Format</span><strong id="infoFormat">—</strong></div>
+          <div class="info"><span>Frames</span><strong id="infoFrames">—</strong></div>
+          <div class="info"><span>Resolution</span><strong id="infoResolution">—</strong></div>
+          <div class="info"><span>Aspect Ratio</span><strong id="infoRatio">—</strong></div>
+          <div class="info"><span>Duration</span><strong id="infoDuration">—</strong></div>
+          <div class="info"><span>File Size</span><strong id="infoSize">—</strong></div>
+          <div class="info"><span>Current Frame</span><strong id="infoCurrent">—</strong></div>
+          <div class="info"><span>Average Frame Delay</span><strong id="infoDelay">—</strong></div>
+        </div>
+      </div>
+
+      <div class="panel mode-only">
+        <div class="panel-head"><div><div class="panel-title">Frame Actions</div><div class="panel-sub">Modify the sequence only</div></div></div>
+        <div class="toolbox">
+          <button class="btn" id="moveLeftBtn" type="button">← Move Left</button>
+          <button class="btn" id="moveRightBtn" type="button">Move Right →</button>
+          <button class="btn" id="duplicateBtn" type="button">Duplicate</button>
+          <button class="btn danger" id="deleteBtn" type="button">Delete</button>
+          <button class="btn primary" id="replaceBtn" type="button" style="grid-column:1/-1;">Replace Selected Frame</button>
+          <input id="replaceInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif,.png,.jpg,.jpeg,.webp,.gif" hidden>
+        </div>
+      </div>
+
+      <div class="panel mode-only">
+        <div class="panel-head"><div><div class="panel-title">Selected Frame</div><div class="panel-sub">Timing, pixel size & quick export</div></div></div>
+        <div class="section-body">
+          <div class="selected-frame-summary">
+            <div>
+              <span>Frame</span>
+              <strong id="selectedFrameLabel">—</strong>
+            </div>
+            <div>
+              <span>Resolution</span>
+              <strong id="selectedFrameResolution">—</strong>
+              <small>pixels</small>
+            </div>
+            <div>
+              <span>Aspect Ratio</span>
+              <strong id="selectedFrameRatio">—</strong>
+            </div>
+          </div>
+          <div class="selected-frame-export">
+            <button class="btn export-btn" id="selectedPngBtn" type="button" aria-label="Export current frame as PNG">
+              <span class="export-btn-content"><span class="export-btn-main"><i class="fa-solid fa-file-image" aria-hidden="true"></i> Export Current PNG</span><span class="export-estimate" id="selectedPngEstimate">Est. —</span></span>
+            </button>
+            <button class="btn export-btn" id="selectedJpgBtn" type="button" aria-label="Export current frame as JPG">
+              <span class="export-btn-content"><span class="export-btn-main"><i class="fa-solid fa-file-image" aria-hidden="true"></i> Export Current JPG</span><span class="export-estimate" id="selectedJpgEstimate">Est. —</span></span>
+            </button>
+          </div>
+          <div class="field">
+            <label><span>Frame delay</span><span id="delayValue">—</span></label>
+            <input id="delayInput" type="number" min="10" max="60000" step="10" value="100">
+            <button class="btn subtle-btn delay-all-btn" id="delayAllBtn" type="button" disabled>
+              <i class="fa-solid fa-layer-group" aria-hidden="true"></i> Add to all
+            </button>
+            <div class="small-note delay-all-note">Copies the selected frame's current delay to every frame once. Frames remain independently editable afterward.</div>
+          </div>
+          <div class="replace-box">
+            <div class="ratio-line"><span>Required aspect ratio</span><span class="ratio-badge" id="requiredRatioBadge">—</span></div>
+            <div class="small-note" style="margin-top:8px">Replace accepts any resolution when its aspect ratio matches the selected frame canvas. The imported image is scaled to the animation resolution without distortion.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><div><div class="panel-title">Export</div><div class="panel-sub">Current frame or rebuilt animation</div></div></div>
+        <div class="section-body export-settings">
+          <div class="field">
+            <label><span>Animated export format</span><span id="exportFormatHint">GIF • Original</span></label>
+            <div class="radio-grid" role="radiogroup" aria-label="Animated export format">
+              <label class="radio-card">
+                <input type="radio" name="exportFormat" value="gif" checked>
+                <span class="radio-card-body"><i class="fa-solid fa-film" aria-hidden="true"></i><span><strong>GIF</strong><small>Plain / original export</small></span></span>
+              </label>
+              <label class="radio-card">
+                <input type="radio" name="exportFormat" value="webp">
+                <span class="radio-card-body"><i class="fa-solid fa-bolt" aria-hidden="true"></i><span><strong>WebP</strong><small>Adjust visual quality</small></span></span>
+              </label>
+            </div>
+            <div class="small-note" style="margin-top:8px">Choose one animated output format. GIF keeps the existing plain export behavior; WebP reveals a quality control.</div>
+          </div>
+          <div class="field">
+            <label><span>Animation looping</span><span id="exportLoopHint">Autoloop</span></label>
+            <select id="exportLoop">
+              <option value="1">Loop 1×</option>
+              <option value="2">Loop 2×</option>
+              <option value="3">Loop 3×</option>
+              <option value="0" selected>Autoloop ∞</option>
+            </select>
+            <div class="small-note" style="margin-top:7px">Applied to the selected animated export format. 0 means infinite looping.</div>
+          </div>
+          <div class="field conditional-webp" id="webpQualityField" hidden>
+            <label for="webpQuality"><span>WebP visual quality</span><span id="webpQualityValue">100%</span></label>
+            <div class="quality-row">
+              <input class="range" id="webpQuality" type="range" min="10" max="100" step="1" value="100" aria-label="WebP visual quality">
+              <div class="quality-value" id="webpQualityValueSide">100%</div>
+            </div>
+            <div class="quality-note">Resolution stays exactly the same. 100% = original visual quality; lower values reduce visual encoding quality only. 50% keeps the same pixel dimensions.</div>
+          </div>
+        </div>
+        <div class="toolbar" style="padding-top:0;">
+          <button class="btn export-btn" id="pngBtn" type="button" aria-label="Export current frame as PNG">
+            <span class="export-btn-content"><span class="export-btn-main"><i class="fa-solid fa-image" aria-hidden="true"></i> Current PNG</span><span class="export-estimate" id="pngEstimate">Est. —</span></span>
+          </button>
+          <button class="btn export-btn" id="jpgBtn" type="button" aria-label="Export current frame as JPG">
+            <span class="export-btn-content"><span class="export-btn-main"><i class="fa-solid fa-image" aria-hidden="true"></i> Current JPG</span><span class="export-estimate" id="jpgEstimate">Est. —</span></span>
+          </button>
+          <button class="btn export-btn" id="allPngBtn" type="button" aria-label="Export all frames as PNG ZIP">
+            <span class="export-btn-content"><span class="export-btn-main"><i class="fa-solid fa-file-zipper" aria-hidden="true"></i> All PNG · ZIP</span><span class="export-estimate" id="allPngEstimate">Est. —</span></span>
+          </button>
+          <button class="btn export-btn" id="allJpgBtn" type="button" aria-label="Export all frames as JPG ZIP">
+            <span class="export-btn-content"><span class="export-btn-main"><i class="fa-solid fa-file-zipper" aria-hidden="true"></i> All JPG · ZIP</span><span class="export-estimate" id="allJpgEstimate">Est. —</span></span>
+          </button>
+          <button class="btn success export-btn" id="exportAnimatedBtn" type="button" style="grid-column:1/-1;" aria-label="Export animated GIF or WebP">
+            <span class="export-btn-content"><span class="export-btn-main"><i class="fa-solid fa-file-export" aria-hidden="true"></i> Export Animated <span id="exportAnimatedFormatLabel">GIF</span></span><span class="export-estimate" id="animatedEstimate">Est. —</span></span>
+          </button>
+        </div>
+        <div class="section-body" style="padding-top:0"><div class="small-note">JPG export flattens transparent pixels against white. ZIP exports contain only the numbered frame files. Animated exports use the edited frame order and per-frame delays. Estimates are approximate and update when frame selection or WebP quality changes.</div></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><div><div class="panel-title">Session</div><div class="panel-sub">Autosaved locally in this browser</div></div></div>
+        <div class="section-body">
+          <div class="small-note" id="sessionStatus">No saved workspace</div>
+          <div class="session-actions" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px;">
+          <button class="btn" id="resetBtn" type="button">Reset</button>
+          <button class="btn" id="aboutBtn" type="button">About</button>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="footer">Single-file app • Local GIF/WebP frame pipeline • GIF encoding via gifenc • ZIP exports via JSZip • animated WebP export via native browser WebP encoding</footer>
+</div>
+
+<div class="toast" id="toast"></div>
+<div class="modal-backdrop" id="replaceModal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="replaceTitle">
+    <div class="modal-head"><strong id="replaceTitle">Replace Frame</strong><button class="icon-btn" id="closeReplaceBtn" type="button">×</button></div>
+    <div class="modal-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="info"><span>Selected frame</span><strong id="replaceTargetInfo">—</strong><div class="small-note" id="replaceTargetRatio">—</div></div>
+        <div class="info"><span>Imported image</span><strong id="replaceSourceInfo">—</strong><div class="small-note" id="replaceSourceRatio">—</div></div>
+      </div>
+      <div id="replaceMatchBox" style="margin-top:12px;padding:11px 12px;border-radius:11px;border:1px solid var(--line);background:rgba(255,255,255,.025);font-size:11px">Choose a replacement image.</div>
+      <div class="small-note" style="margin-top:10px">Only aspect ratio must match. A matching image may use a different resolution and will be scaled to the animation canvas without distortion.</div>
+    </div>
+    <div class="modal-foot"><button class="btn" id="cancelReplaceBtn" type="button">Cancel</button><button class="btn primary" id="applyReplaceBtn" type="button" disabled>Apply Replacement</button></div>
+  </div>
+</div>
+<div class="modal-backdrop" id="aboutModal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="aboutTitle">
+    <div class="modal-head"><strong id="aboutTitle">About MotionFrame</strong><button class="icon-btn" id="closeAboutBtn" type="button">×</button></div>
+    <div class="modal-body"><div class="small-note" style="font-size:12px;line-height:1.7;color:#cbd2dd">MotionFrame is a client-side GIF/WebP animation viewer and frame modifier. GIF and animated WebP imports use the browser/local frame pipeline without requiring a remote decoder library. VIEW focuses on playback. MODIFY lets you reorder, duplicate, delete, retime, or replace frames. Replacement is accepted only when the aspect ratio matches the selected frame canvas. No image data is uploaded by this app.</div></div>
+    <div class="modal-foot"><button class="btn primary" id="aboutOkBtn" type="button">Close</button></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="resetModal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="resetTitle">
+    <div class="modal-head"><strong id="resetTitle">Reset workspace?</strong><button class="icon-btn" id="closeResetBtn" type="button" aria-label="Close">×</button></div>
+    <div class="modal-body">
+      <div style="font-size:13px;line-height:1.65;color:#cbd2dd">This will remove the current animation, edited frames, and the locally autosaved session from this browser. This action cannot be undone.</div>
+    </div>
+    <div class="modal-foot"><button class="btn" id="cancelResetBtn" type="button">Cancel</button><button class="btn danger" id="confirmResetBtn" type="button">Reset & Clear</button></div>
+  </div>
+</div>
+<div class="modal-backdrop" id="progressModal">
+  <div class="modal progress-modal" role="dialog" aria-modal="true" aria-labelledby="progressTitle">
+    <div class="modal-head">
+      <div class="progress-title"><span class="progress-icon"><i class="fa-solid fa-spinner" aria-hidden="true"></i></span><span id="progressTitle">Processed</span></div>
+    </div>
+    <div class="modal-body">
+      <div class="progress-label" id="progressLabel">Preparing export…</div>
+      <div class="progress-track" aria-hidden="true"><div class="progress-fill" id="progressFill"></div></div>
+      <div class="progress-meta"><span id="progressDetail">Starting…</span><span id="progressPercent">0%</span></div>
+    </div>
+    <div class="modal-foot"><button class="btn danger" id="exportCancelBtn" type="button"><i class="fa-solid fa-stop" aria-hidden="true"></i> Cancel Export</button></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+  const SESSION_DB = 'motionframe-session-db';
+  const SESSION_STORE = 'workspace';
+  const $ = (id) => document.getElementById(id);
+
+  const els = {
+    body: document.body, viewModeBtn: $('viewModeBtn'), modifyModeBtn: $('modifyModeBtn'), openBtn: $('openBtn'), dropOpenBtn: $('dropOpenBtn'),
+    fileInput: $('fileInput'), replaceInput: $('replaceInput'), dropZone: $('dropZone'), loadStatus: $('loadStatus'), fileTitle: $('fileTitle'),
+    mainCanvas: $('mainCanvas'), emptyState: $('emptyState'), stage: $('stage'), playBtn: $('playBtn'), timeline: $('timeline'),
+    timeReadout: $('timeReadout'), playerFrameInfo: $('playerFrameInfo'), loopInfo: $('loopInfo'), thumbStrip: $('thumbStrip'), stripCount: $('stripCount'),
+    infoFormat: $('infoFormat'), infoFrames: $('infoFrames'), infoResolution: $('infoResolution'), infoRatio: $('infoRatio'), infoDuration: $('infoDuration'),
+    infoSize: $('infoSize'), infoCurrent: $('infoCurrent'), infoDelay: $('infoDelay'), moveLeftBtn: $('moveLeftBtn'), moveRightBtn: $('moveRightBtn'),
+    duplicateBtn: $('duplicateBtn'), deleteBtn: $('deleteBtn'), replaceBtn: $('replaceBtn'), delayInput: $('delayInput'), delayValue: $('delayValue'), delayAllBtn: $('delayAllBtn'),
+    requiredRatioBadge: $('requiredRatioBadge'), pngBtn: $('pngBtn'), jpgBtn: $('jpgBtn'), allPngBtn: $('allPngBtn'), allJpgBtn: $('allJpgBtn'), resetBtn: $('resetBtn'), aboutBtn: $('aboutBtn'), aboutModal: $('aboutModal'), closeAboutBtn: $('closeAboutBtn'), aboutOkBtn: $('aboutOkBtn'),
+    replaceModal: $('replaceModal'), closeReplaceBtn: $('closeReplaceBtn'), cancelReplaceBtn: $('cancelReplaceBtn'), applyReplaceBtn: $('applyReplaceBtn'),
+    replaceTargetInfo: $('replaceTargetInfo'), replaceTargetRatio: $('replaceTargetRatio'), replaceSourceInfo: $('replaceSourceInfo'), replaceSourceRatio: $('replaceSourceRatio'),
+    replaceMatchBox: $('replaceMatchBox'), resetModal: $('resetModal'), closeResetBtn: $('closeResetBtn'), cancelResetBtn: $('cancelResetBtn'), confirmResetBtn: $('confirmResetBtn'),
+    sessionStatus: $('sessionStatus'), toast: $('toast'), selectedPngBtn: $('selectedPngBtn'), selectedJpgBtn: $('selectedJpgBtn'), selectedPngEstimate: $('selectedPngEstimate'), selectedJpgEstimate: $('selectedJpgEstimate'), pngBtn: $('pngBtn'), jpgBtn: $('jpgBtn'), allPngBtn: $('allPngBtn'), allJpgBtn: $('allJpgBtn'), pngEstimate: $('pngEstimate'), jpgEstimate: $('jpgEstimate'), allPngEstimate: $('allPngEstimate'), allJpgEstimate: $('allJpgEstimate'), selectedFrameLabel: $('selectedFrameLabel'), selectedFrameResolution: $('selectedFrameResolution'), selectedFrameRatio: $('selectedFrameRatio'), exportLoop: $('exportLoop'), exportLoopHint: $('exportLoopHint'), exportAnimatedBtn: $('exportAnimatedBtn'), exportAnimatedFormatLabel: $('exportAnimatedFormatLabel'), animatedEstimate: $('animatedEstimate'), exportFormatHint: $('exportFormatHint'), exportFormatRadios: document.querySelectorAll('input[name="exportFormat"]'), webpQualityField: $('webpQualityField'), webpQuality: $('webpQuality'), webpQualityValue: $('webpQualityValue'), webpQualityValueSide: $('webpQualityValueSide'), progressModal: $('progressModal'), progressLabel: $('progressLabel'), progressDetail: $('progressDetail'), progressPercent: $('progressPercent'), progressFill: $('progressFill'), exportCancelBtn: $('exportCancelBtn')
+  };
+
+  const state = {
+    mode: 'view', file: null, sourceName: '', sourceSize: 0, format: '', width: 0, height: 0,
+    frames: [], selected: 0, activeThumbEl: null, playing: false, playTimer: null, playRaf: 0, playRemaining: null, playFrameStartedAt: 0, playLastTimestamp: 0, playbackLoopStartedAt: 0, totalDuration: 0, frameStarts: [],
+    loopCount: 0, exportLoopCount: 0, exportFormat: 'gif', webpQuality: 100, currentTime: 0, pendingReplacement: null, saveTimer: null, dbPromise: null, restored: false, gifEncoder: null, saveEpoch: 0, estimateTimer: null, estimateToken: 0
+  };
+
+  function showToast(message, kind='') {
+    els.toast.textContent = message;
+    els.toast.className = `toast show ${kind}`;
+    clearTimeout(showToast.timer);
+    showToast.timer = setTimeout(() => els.toast.className='toast', 3200);
+  }
+  function setStatus(message){ els.loadStatus.textContent = message || ''; }
+  function setSessionStatus(message, saved=false){
+    els.sessionStatus.innerHTML = saved ? `<span class="save-indicator"><span class="save-dot"></span>${message}</span>` : message;
+  }
+  function formatBytes(bytes){ if(!Number.isFinite(bytes)||bytes<=0) return '—'; const units=['B','KB','MB','GB']; let i=0,n=Number(bytes); while(n>=1024&&i<units.length-1){n/=1024;i++;} if(i===0) return `${Math.round(n)} B`; if(i===1) return `${Math.round(n)} KB`; return `${n.toFixed(2)} ${units[i]}`; }
+  function formatImportedFileSize(bytes){ if(!Number.isFinite(bytes)||bytes<=0) return '—'; const b=Number(bytes),kb=b/1024,mb=kb/1024,gb=mb/1024; if(b<1024) return `${Math.round(b)} B`; if(b<1024*1024) return `${Math.round(kb)} KB`; if(b<1024*1024*1024) return `${mb.toFixed(2)} MB`; return `${gb.toFixed(2)} GB`; }
+  function formatMs(ms){ const s=Math.max(0,ms)/1000,m=Math.floor(s/60),sec=Math.floor(s%60); return `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`; }
+  function gcd(a,b){ a=Math.abs(Math.round(a)); b=Math.abs(Math.round(b)); while(b){const t=a%b;a=b;b=t;} return a||1; }
+  function ratioText(w,h){ if(!w||!h)return '—'; const g=gcd(w,h); return `${Math.round(w/g)}:${Math.round(h/g)}`; }
+  function ratioValue(w,h){ return h ? w/h : 0; }
+  function ratioMatch(aW,aH,bW,bH){ const a=ratioValue(aW,aH),b=ratioValue(bW,bH); return !!a&&!!b&&Math.abs(a-b)<=Math.max(0.0001,Math.abs(b)*0.0001); }
+  function cloneImageData(data){ return new ImageData(new Uint8ClampedArray(data.data),data.width,data.height); }
+  function downloadBlob(blob,filename){ if(!blob){showToast('Nothing to export.','error');return;} const url=URL.createObjectURL(blob),a=document.createElement('a'); a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500); }
+  function baseName(name){ return (name||'animation').replace(/\.[^.]+$/,'')||'animation'; }
+  function ensureLoaded(){ if(!state.frames.length){showToast('Import an animation first.','error');return false;} return true; }
+  function nextTick(){ return new Promise(r=>setTimeout(r,0)); }
+
+  let exportBusy=false;
+  let exportCancelled=false;
+  function showExportProgress(label='Preparing export…', detail='Starting…', percent=0){
+    exportBusy=true; exportCancelled=false;
+    els.progressLabel.textContent=label;
+    els.progressDetail.textContent=detail;
+    const safe=Math.max(0,Math.min(100,Number(percent)||0));
+    els.progressPercent.textContent=`${Math.round(safe)}%`;
+    els.progressFill.style.width=`${safe}%`;
+    els.exportCancelBtn.disabled=false;
+    els.exportCancelBtn.innerHTML='<i class="fa-solid fa-stop" aria-hidden="true"></i> Cancel Export';
+    els.progressModal.classList.add('show');
+    els.exportAnimatedBtn.disabled=true;
+  }
+  function updateExportProgress(label,detail,percent){
+    if(!exportBusy)showExportProgress(label,detail,percent);
+    else{
+      els.progressLabel.textContent=label;
+      els.progressDetail.textContent=detail;
+      const safe=Math.max(0,Math.min(100,Number(percent)||0));
+      els.progressPercent.textContent=`${Math.round(safe)}%`;
+      els.progressFill.style.width=`${safe}%`;
+    }
+  }
+  function requestCancelExport(){
+    if(!exportBusy)return;
+    exportCancelled=true;
+    els.exportCancelBtn.disabled=true;
+    els.exportCancelBtn.innerHTML='<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Cancelling…';
+    els.progressLabel.textContent='Cancelling export…';
+    els.progressDetail.textContent='Stopping before the next encoding step.';
+  }
+  function isExportCancelled(){ return exportCancelled; }
+  function hideExportProgress({cancelled=false}={}){
+    exportBusy=false;
+    els.exportAnimatedBtn.disabled=false;
+    els.exportCancelBtn.disabled=false;
+    els.exportCancelBtn.innerHTML='<i class="fa-solid fa-stop" aria-hidden="true"></i> Cancel Export';
+    if(cancelled){
+      els.progressModal.classList.remove('show');
+      els.progressFill.style.width='0%';
+      els.progressPercent.textContent='0%';
+      return;
+    }
+    els.progressFill.style.width='100%';
+    els.progressPercent.textContent='100%';
+    setTimeout(()=>{els.progressModal.classList.remove('show');els.progressFill.style.width='0%';},180);
+  }
+
+  // ---------- IndexedDB autosave ----------
+  function openSessionDB(){
+    if(state.dbPromise)return state.dbPromise;
+    state.dbPromise=new Promise((resolve,reject)=>{
+      const req=indexedDB.open(SESSION_DB,1);
+      req.onupgradeneeded=()=>{ const db=req.result; if(!db.objectStoreNames.contains(SESSION_STORE)) db.createObjectStore(SESSION_STORE); };
+      req.onsuccess=()=>resolve(req.result);
+      req.onerror=()=>reject(req.error);
+    });
+    return state.dbPromise;
+  }
+  async function idbPut(key,value){ const db=await openSessionDB(); return new Promise((resolve,reject)=>{ const tx=db.transaction(SESSION_STORE,'readwrite'); tx.objectStore(SESSION_STORE).put(value,key); tx.oncomplete=()=>resolve(); tx.onerror=()=>reject(tx.error); }); }
+  async function idbGet(key){ const db=await openSessionDB(); return new Promise((resolve,reject)=>{ const tx=db.transaction(SESSION_STORE,'readonly'); const req=tx.objectStore(SESSION_STORE).get(key); req.onsuccess=()=>resolve(req.result||null); req.onerror=()=>reject(req.error); }); }
+  async function idbClear(){ const db=await openSessionDB(); return new Promise((resolve,reject)=>{ const tx=db.transaction(SESSION_STORE,'readwrite'); tx.objectStore(SESSION_STORE).clear(); tx.oncomplete=()=>resolve(); tx.onerror=()=>reject(tx.error); }); }
+
+  async function imageDataToBlob(imageData){
+    const c=document.createElement('canvas'); c.width=imageData.width;c.height=imageData.height;c.getContext('2d').putImageData(imageData,0,0);
+    return new Promise((resolve,reject)=>c.toBlob(b=>b?resolve(b):reject(new Error('Could not serialize a frame.')),'image/png'));
+  }
+  async function blobToImageData(blob){
+    const bmp=await createImageBitmap(blob);
+    const c=document.createElement('canvas'); c.width=bmp.width;c.height=bmp.height; const ctx=c.getContext('2d',{willReadFrequently:true}); ctx.drawImage(bmp,0,0); if(bmp.close)bmp.close(); return ctx.getImageData(0,0,c.width,c.height);
+  }
+  function scheduleAutosave(){
+    clearTimeout(state.saveTimer);
+    if(!state.frames.length){ return; }
+    setSessionStatus('Saving local session…');
+    state.saveTimer=setTimeout(()=>saveSession().catch(err=>{console.error(err);setSessionStatus('Local autosave unavailable');}),550);
+  }
+  async function saveSession(){
+    if(!state.frames.length)return;
+    const epoch=state.saveEpoch;
+    const frameRecords=[];
+    for(let i=0;i<state.frames.length;i++){
+      frameRecords.push({delay:Math.max(10,state.frames[i].delay||100),blob:await imageDataToBlob(state.frames[i].imageData)});
+      if(i%3===0)await nextTick();
+    }
+    const payload={
+      version:3,savedAt:Date.now(),mode:state.mode,sourceName:state.sourceName,sourceSize:state.sourceSize,format:state.format,
+      width:state.width,height:state.height,loopCount:state.loopCount,exportLoopCount:state.exportLoopCount,exportFormat:state.exportFormat,webpQuality:state.webpQuality,selected:state.selected,currentTime:state.currentTime,frames:frameRecords
+    };
+    if(epoch!==state.saveEpoch || !state.frames.length)return;
+    await idbPut('workspace',payload);
+    if(epoch!==state.saveEpoch)return;
+    setSessionStatus(`Saved locally • ${new Date(payload.savedAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`,true);
+  }
+  async function restoreSession(){
+    try{
+      const saved=await idbGet('workspace');
+      if(!saved?.frames?.length)return false;
+      setSessionStatus('Restoring saved workspace…');
+      const restoredFrames=[];
+      for(let i=0;i<saved.frames.length;i++){
+        restoredFrames.push({imageData:await blobToImageData(saved.frames[i].blob),delay:Math.max(10,Number(saved.frames[i].delay)||100)});
+        if(i%3===0){setStatus(`Restoring frame ${i+1} / ${saved.frames.length}…`);await nextTick();}
+      }
+      state.mode=saved.mode==='modify'?'modify':'view'; state.sourceName=saved.sourceName||'Restored Animation'; state.sourceSize=Number(saved.sourceSize)||0;
+      state.format=saved.format||'WebP'; state.width=Number(saved.width)||restoredFrames[0].imageData.width; state.height=Number(saved.height)||restoredFrames[0].imageData.height;
+      state.loopCount=Number(saved.loopCount)||0; state.exportLoopCount=[0,1,2,3].includes(Number(saved.exportLoopCount))?Number(saved.exportLoopCount):0; state.exportFormat=saved.exportFormat==='webp'?'webp':'gif'; state.webpQuality=Math.min(100,Math.max(10,Number(saved.webpQuality)||100)); state.frames=restoredFrames; state.selected=Math.min(Math.max(0,Number(saved.selected)||0),restoredFrames.length-1);
+      state.currentTime=Number(saved.currentTime)||0;state.restored=true;state.file=null;recalcDuration();setMode(state.mode);renderAll();setStatus('');setSessionStatus(`Restored locally • ${new Date(saved.savedAt||Date.now()).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`,true);showToast('Autosaved workspace restored.','success');return true;
+    }catch(err){ console.error(err); setStatus(''); setSessionStatus('Saved session could not be restored.'); return false; }
+  }
+  async function clearSessionStorage(){ clearTimeout(state.saveTimer); state.saveTimer=null; state.saveEpoch++; try{await idbClear();}catch(err){console.error(err);} }
+
+  // ---------- Self-contained animation decoding ----------
+  // Import does not depend on a global GIF/WebP decoder library.
+  // GIF is parsed/decompressed directly in JavaScript; animated WebP is parsed from RIFF/ANMF
+  // and each frame payload is decoded by the browser's native WebP image decoder.
+
+  function readU16(bytes, offset){ return bytes[offset] | (bytes[offset+1] << 8); }
+  function readU24(bytes, offset){ return bytes[offset] | (bytes[offset+1] << 8) | (bytes[offset+2] << 16); }
+  function readAscii(bytes, offset, length){ let out=''; for(let i=0;i<length;i++) out += String.fromCharCode(bytes[offset+i]||0); return out; }
+  function concatBytes(parts){
+    let total=0; for(const part of parts) total+=part.length;
+    const out=new Uint8Array(total); let pos=0;
+    for(const part of parts){ out.set(part,pos); pos+=part.length; }
+    return out;
+  }
+  function readSubBlocks(bytes, offset){
+    const parts=[]; let pos=offset;
+    while(pos<bytes.length){
+      const size=bytes[pos++];
+      if(size===0) break;
+      if(pos+size>bytes.length) throw new Error('Corrupt animation data: truncated sub-block.');
+      parts.push(bytes.slice(pos,pos+size)); pos+=size;
+    }
+    return {data:concatBytes(parts),offset:pos};
+  }
+
+  function decodeGifLZW(minCodeSize, data, pixelCount){
+    const clearCode=1<<minCodeSize, endCode=clearCode+1, maxCodes=4096;
+    const prefix=new Int16Array(maxCodes), suffix=new Uint8Array(maxCodes), pixelStack=new Uint8Array(maxCodes+1), output=new Uint8Array(pixelCount);
+    let available=clearCode+2, oldCode=-1, codeSize=minCodeSize+1, codeMask=(1<<codeSize)-1;
+    for(let i=0;i<clearCode;i++){ prefix[i]=0; suffix[i]=i; }
+    let datum=0,bits=0,bi=0,top=0,pi=0,first=0;
+    while(pi<pixelCount){
+      if(top===0){
+        if(bits<codeSize){
+          if(bi>=data.length) break;
+          datum |= data[bi++] << bits; bits+=8; continue;
+        }
+        let code=datum & codeMask; datum>>>=codeSize; bits-=codeSize;
+        if(code===clearCode){ codeSize=minCodeSize+1; codeMask=(1<<codeSize)-1; available=clearCode+2; oldCode=-1; continue; }
+        if(code===endCode) break;
+        if(code>available || code>=maxCodes) break;
+        if(oldCode===-1){ pixelStack[top++]=suffix[code]; oldCode=code; first=suffix[code]; }
+        else {
+          const inCode=code;
+          if(code===available){ pixelStack[top++]=first; code=oldCode; }
+          while(code>clearCode){ pixelStack[top++]=suffix[code]; code=prefix[code]; }
+          first=suffix[code]; pixelStack[top++]=first;
+          if(available<maxCodes){ prefix[available]=oldCode; suffix[available]=first; available++; if(available=== (1<<codeSize) && codeSize<12){ codeSize++; codeMask=(1<<codeSize)-1; } }
+          oldCode=inCode;
+        }
+      }
+      top--; output[pi++]=pixelStack[top];
+    }
+    return output;
+  }
+  function deinterlaceGifPixels(pixels,width,height){
+    const out=new Uint8Array(pixels.length), passes=[[0,8],[4,8],[2,4],[1,2]]; let from=0;
+    for(const [start,step] of passes){ for(let row=start;row<height;row+=step){ out.set(pixels.slice(from,from+width),row*width); from+=width; } }
+    return out;
+  }
+  function parseGifColorTable(bytes, offset, size){
+    const table=[]; for(let i=0;i<size;i++){ const p=offset+i*3; if(p+2>=bytes.length) throw new Error('Corrupt GIF color table.'); table.push([bytes[p],bytes[p+1],bytes[p+2]]); }
+    return table;
+  }
+  async function decodeGIF(file){
+    const bytes=new Uint8Array(await file.arrayBuffer());
+    if(bytes.length<13 || !/^GIF8[79]a$/.test(readAscii(bytes,0,6))) throw new Error('Invalid GIF file.');
+    const width=readU16(bytes,6), height=readU16(bytes,8), packed=bytes[10], bgIndex=bytes[11];
+    const gctFlag=(packed & 0x80)!==0, gctSize=2 ** ((packed & 0x07)+1);
+    let offset=13, gct=gctFlag?parseGifColorTable(bytes,offset,gctSize):[]; if(gctFlag) offset += gctSize*3;
+    if(!width||!height) throw new Error('GIF canvas dimensions could not be read.');
+    let gce={delay:100,disposal:0,transparent:false,transparentIndex:0}, loopCount=0, frames=[];
+    const canvas=document.createElement('canvas'); canvas.width=width; canvas.height=height;
+    const ctx=canvas.getContext('2d',{willReadFrequently:true}); ctx.clearRect(0,0,width,height);
+    let previousDisposal=0, previousRect=null, restoreImage=null;
+    const fillBackground=()=>{ if(gct[bgIndex]){ const [r,g,b]=gct[bgIndex]; ctx.fillStyle=`rgb(${r} ${g} ${b})`; ctx.fillRect(0,0,width,height); } else ctx.clearRect(0,0,width,height); };
+
+    while(offset<bytes.length){
+      const introducer=bytes[offset++];
+      if(introducer===0x3B) break;
+      if(introducer===0x21){
+        if(offset>=bytes.length) throw new Error('Corrupt GIF extension.');
+        const label=bytes[offset++];
+        if(label===0xF9){
+          const size=bytes[offset++]; if(size!==4||offset+size>bytes.length) throw new Error('Corrupt Graphic Control Extension.');
+          const p=bytes[offset++], delayCs=readU16(bytes,offset); offset+=2; const transparentIndex=bytes[offset++];
+          offset++; // block terminator
+          gce={delay:Math.max(10,delayCs*10||100),disposal:(p>>2)&7,transparent:(p&1)!==0,transparentIndex};
+        }else if(label===0xFF){
+          const size=bytes[offset++]; if(offset+size>bytes.length) throw new Error('Corrupt application extension.');
+          const app=readAscii(bytes,offset,size); offset+=size; const sub=readSubBlocks(bytes,offset); offset=sub.offset;
+          if((app==='NETSCAPE2.0'||app==='ANIMEXTS1.0') && sub.data.length>=3 && sub.data[0]===1) loopCount=readU16(sub.data,1);
+        }else{
+          const sub=readSubBlocks(bytes,offset); offset=sub.offset;
+        }
+        continue;
+      }
+      if(introducer!==0x2C) throw new Error(`Unsupported/invalid GIF block 0x${introducer.toString(16)}.`);
+      if(offset+9>bytes.length) throw new Error('Corrupt GIF image descriptor.');
+      const left=readU16(bytes,offset), top=readU16(bytes,offset+2), frameW=readU16(bytes,offset+4), frameH=readU16(bytes,offset+6), ip=bytes[offset+8]; offset+=9;
+      const lctFlag=(ip&0x80)!==0, interlaced=(ip&0x40)!==0, lctSize=2 ** ((ip&0x07)+1);
+      let lct=lctFlag?parseGifColorTable(bytes,offset,lctSize):null; if(lctFlag) offset+=lctSize*3;
+      if(offset>=bytes.length) throw new Error('Corrupt GIF image data.');
+      const minCodeSize=bytes[offset++], sub=readSubBlocks(bytes,offset); offset=sub.offset;
+      let pixels=decodeGifLZW(minCodeSize,sub.data,frameW*frameH); if(interlaced) pixels=deinterlaceGifPixels(pixels,frameW,frameH);
+      const colorTable=lct||gct; if(!colorTable.length) throw new Error('GIF has no color table.');
+
+      if(previousDisposal===3 && restoreImage){ ctx.putImageData(restoreImage,0,0); }
+      else if(previousDisposal===2 && previousRect){ fillBackground(); }
+      previousRect={left,top,width:frameW,height:frameH};
+      restoreImage=(gce.disposal===3)?ctx.getImageData(0,0,width,height):null;
+
+      const patch=new Uint8ClampedArray(frameW*frameH*4);
+      for(let i=0;i<pixels.length;i++){
+        const c=colorTable[pixels[i]]||[0,0,0], q=i*4; patch[q]=c[0];patch[q+1]=c[1];patch[q+2]=c[2];patch[q+3]=(gce.transparent&&pixels[i]===gce.transparentIndex)?0:255;
+      }
+      ctx.putImageData(new ImageData(patch,frameW,frameH),left,top);
+      frames.push({imageData:ctx.getImageData(0,0,width,height),delay:gce.delay});
+      previousDisposal=gce.disposal;
+      gce={delay:100,disposal:0,transparent:false,transparentIndex:0};
+      setStatus(`Decoding GIF frame ${frames.length}…`); await nextTick();
+    }
+    if(!frames.length) throw new Error('No GIF image frames were found.');
+    return {width,height,frames,loopCount};
+  }
+
+  function parseWebpChunks(bytes){
+    if(bytes.length<12 || readAscii(bytes,0,4)!=='RIFF' || readAscii(bytes,8,4)!=='WEBP') throw new Error('Invalid WebP RIFF container.');
+    const chunks=[]; let offset=12;
+    while(offset+8<=bytes.length){
+      const type=readAscii(bytes,offset,4), size=readU32LE(bytes,offset+4); offset+=8;
+      if(offset+size>bytes.length) throw new Error('Corrupt WebP: truncated chunk.');
+      chunks.push({type,data:bytes.slice(offset,offset+size),offset:offset-8,size}); offset+=size+(size&1);
+    }
+    return chunks;
+  }
+  function readU32LE(bytes,offset){ return (bytes[offset] | (bytes[offset+1]<<8) | (bytes[offset+2]<<16) | (bytes[offset+3]<<24)) >>> 0; }
+  function buildWebpFrameFile(framePayload, width, height){
+    const payloadChunks=[]; let p=0, hasAlpha=false;
+    while(p+8<=framePayload.length){
+      const type=readAscii(framePayload,p,4), size=readU32LE(framePayload,p+4); const end=p+8+size;
+      if(end>framePayload.length) throw new Error('Corrupt ANMF payload.');
+      const chunk=framePayload.slice(p,end+(size&1)); payloadChunks.push(chunk); if(type==='ALPH')hasAlpha=true; p=end+(size&1);
+    }
+    const vp8x=new Uint8Array(18); vp8x.set([0x56,0x50,0x38,0x58],0); const view=new DataView(vp8x.buffer); view.setUint32(4,10,true);
+    vp8x[8]=hasAlpha?0x10:0; vp8x[12]=(width-1)&255; vp8x[13]=((width-1)>>8)&255; vp8x[14]=((width-1)>>16)&255;
+    vp8x[15]=(height-1)&255; vp8x[16]=((height-1)>>8)&255; vp8x[17]=((height-1)>>16)&255;
+    const inner=concatBytes([vp8x,...payloadChunks]); const riff=new Uint8Array(8+4+inner.length); riff.set([0x52,0x49,0x46,0x46,0,0,0,0,0x57,0x45,0x42,0x50],0); new DataView(riff.buffer).setUint32(4,4+inner.length,true); riff.set(inner,12); return riff;
+  }
+  async function decodeWebPFrameBytes(frameBytes){
+    const blob=new Blob([frameBytes],{type:'image/webp'});
+    if('createImageBitmap' in window){ const bmp=await createImageBitmap(blob); const c=document.createElement('canvas');c.width=bmp.width;c.height=bmp.height;c.getContext('2d').drawImage(bmp,0,0);if(bmp.close)bmp.close();return c.getContext('2d',{willReadFrequently:true}).getImageData(0,0,c.width,c.height); }
+    return new Promise((resolve,reject)=>{ const url=URL.createObjectURL(blob),img=new Image(); img.onload=()=>{const c=document.createElement('canvas');c.width=img.naturalWidth;c.height=img.naturalHeight;c.getContext('2d').drawImage(img,0,0);URL.revokeObjectURL(url);resolve(c.getContext('2d',{willReadFrequently:true}).getImageData(0,0,c.width,c.height));};img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('Browser WebP image decoder unavailable.'));};img.src=url; });
+  }
+  function webpFrameHeader(payload){ return {left:readU24(payload,0)*2,top:readU24(payload,3)*2,width:readU24(payload,6)+1,height:readU24(payload,9)+1,duration:Math.max(10,readU24(payload,12)||100),flags:payload[15]||0}; }
+  function parseWebpDimensions(chunks){
+    const vp8x=chunks.find(c=>c.type==='VP8X'); if(!vp8x||vp8x.data.length<10)return null;
+    return {width:readU24(vp8x.data,4)+1,height:readU24(vp8x.data,7)+1,alpha:(vp8x.data[0]&0x10)!==0};
+  }
+  async function decodeWebP(file){
+    const bytes=new Uint8Array(await file.arrayBuffer()), chunks=parseWebpChunks(bytes), dims=parseWebpDimensions(chunks);
+    const anmf=chunks.filter(c=>c.type==='ANMF');
+    if(!anmf.length){
+      const image=await decodeWebPFrameBytes(bytes); return {width:image.width,height:image.height,frames:[{imageData:image,delay:100}],loopCount:0};
+    }
+    if(!dims) throw new Error('Animated WebP is missing its VP8X canvas dimensions.');
+    const anim=chunks.find(c=>c.type==='ANIM'); let loopCount=0;
+    if(anim&&anim.data.length>=6) loopCount=readU16(anim.data,4);
+    const canvas=document.createElement('canvas');canvas.width=dims.width;canvas.height=dims.height;const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.clearRect(0,0,dims.width,dims.height);
+    const frames=[];
+    for(let i=0;i<anmf.length;i++){
+      const header=webpFrameHeader(anmf[i].data), payload=anmf[i].data.slice(16), frameImage=await decodeWebPFrameBytes(buildWebpFrameFile(payload,header.width,header.height));
+      const blend=(header.flags&1)!==0, dispose=(header.flags&2)!==0;
+      if(!blend) ctx.clearRect(header.left,header.top,header.width,header.height);
+      ctx.drawImage(await imageBitmapFromImageData(frameImage),header.left,header.top); frames.push({imageData:ctx.getImageData(0,0,dims.width,dims.height),delay:header.duration});
+      if(dispose) ctx.clearRect(header.left,header.top,header.width,header.height);
+      setStatus(`Decoding WebP frame ${i+1} / ${anmf.length}…`); await nextTick();
+    }
+    return {width:dims.width,height:dims.height,frames,loopCount};
+  }
+  async function imageBitmapFromImageData(imageData){
+    const c=document.createElement('canvas');c.width=imageData.width;c.height=imageData.height;c.getContext('2d').putImageData(imageData,0,0);
+    if('createImageBitmap' in window)return createImageBitmap(c);
+    return new Promise(resolve=>{ const img=new Image();img.src=c.toDataURL();img.onload=()=>resolve(img); });
+  }
+  async function decodeAnimation(file,format){
+    if(format==='GIF') return decodeGIF(file);
+    return decodeWebP(file);
+  }
+  function fitImageData(imageData,targetW,targetH){
+    const src=document.createElement('canvas');src.width=imageData.width;src.height=imageData.height;src.getContext('2d').putImageData(imageData,0,0);
+    const dst=document.createElement('canvas');dst.width=targetW;dst.height=targetH;dst.getContext('2d').drawImage(src,0,0,targetW,targetH);return dst.getContext('2d',{willReadFrequently:true}).getImageData(0,0,targetW,targetH);
+  }
+
+  function resetState(showToastMessage=false){
+    stopPlayback(); state.file=null;state.sourceName='';state.sourceSize=0;state.format='';state.width=0;state.height=0;state.frames=[];state.selected=0;state.activeThumbEl=null;state.totalDuration=0;state.currentTime=0;state.loopCount=0;state.exportLoopCount=0;state.exportFormat='gif';state.webpQuality=100;state.pendingReplacement=null;state.restored=false;
+    if(els.fileInput)els.fileInput.value=''; if(els.replaceInput)els.replaceInput.value=''; renderAll(); if(showToastMessage)showToast('Workspace reset.');
+  }
+
+  async function importFile(file){
+    if(!file)return; const name=file.name.toLowerCase(); const isGIF=file.type==='image/gif'||name.endsWith('.gif');const isWebP=file.type==='image/webp'||name.endsWith('.webp');
+    if(!isGIF&&!isWebP){showToast('Please choose an animated GIF or WebP file.','error');return;}
+    stopPlayback(); state.file=file;state.sourceName=file.name;state.sourceSize=file.size;state.format=isGIF?'GIF':'WebP';
+    setStatus(`Reading ${state.format} animation…`);setSessionStatus('Importing new workspace…');
+    try{
+      const decoded=await decodeAnimation(file,state.format); state.width=decoded.width;state.height=decoded.height;state.frames=decoded.frames;state.loopCount=decoded.loopCount;state.selected=0;state.currentTime=0;state.restored=false;
+      recalcDuration();
+      renderAll();
+      // Force one browser paint after import so the first decoded frame is
+      // visibly committed to the playback canvas before any animation tick.
+      requestAnimationFrame(()=>drawFrame(state.selected));
+      setStatus(`Loaded ${state.frames.length} frame${state.frames.length===1?'':'s'}.`);setSessionStatus('Saving local session…');scheduleAutosave();showToast(`${file.name} loaded.`,'success');
+    }catch(err){console.error(err);const failedFormat=state.format||'Animation';resetState(false);setSessionStatus('No saved workspace');setStatus('');showToast(`${failedFormat} import failed: ${err?.message||'unable to decode file'}.`,'error');}
+  }
+
+  async function decodeSingleImage(file){
+    try{
+      const bmp=await createImageBitmap(file);const c=document.createElement('canvas');c.width=bmp.width;c.height=bmp.height;c.getContext('2d').drawImage(bmp,0,0);if(bmp.close)bmp.close();return c.getContext('2d',{willReadFrequently:true}).getImageData(0,0,c.width,c.height);
+    }catch(err){
+      const url=URL.createObjectURL(file);try{const img=new Image();img.decoding='async';img.src=url;await img.decode();const c=document.createElement('canvas');c.width=img.naturalWidth;c.height=img.naturalHeight;c.getContext('2d').drawImage(img,0,0);return c.getContext('2d',{willReadFrequently:true}).getImageData(0,0,c.width,c.height);}finally{URL.revokeObjectURL(url);}
+    }
+  }
+  async function loadReplacement(file){
+    if(!ensureLoaded()||!file)return;const okType=/\.(png|jpe?g|webp|gif)$/i.test(file.name)||/^image\/(png|jpeg|webp|gif)$/.test(file.type);if(!okType){showToast('Unsupported replacement image. Use PNG, JPG, WebP, or GIF.','error');return;}
+    try{
+      setStatus('Reading replacement image…');const candidate=await decodeSingleImage(file);const ok=ratioMatch(candidate.width,candidate.height,state.width,state.height);state.pendingReplacement={imageData:candidate,file,ok};
+      els.replaceTargetInfo.textContent=`${state.width} × ${state.height} px`;els.replaceTargetRatio.textContent=`Required ratio: ${ratioText(state.width,state.height)}`;
+      els.replaceSourceInfo.textContent=`${candidate.width} × ${candidate.height} px`;els.replaceSourceRatio.textContent=`Imported ratio: ${ratioText(candidate.width,candidate.height)}`;
+      els.replaceMatchBox.textContent=ok?`✓ Aspect ratio matched — ${ratioText(candidate.width,candidate.height)}. The frame can be replaced.`:`✕ Aspect ratio mismatch — imported ${ratioText(candidate.width,candidate.height)}, required ${ratioText(state.width,state.height)}.`;
+      els.replaceMatchBox.style.borderColor=ok?'rgba(100,214,156,.28)':'rgba(255,123,143,.30)';els.replaceMatchBox.style.color=ok?'#baf2d3':'#ffd0d7';els.applyReplaceBtn.disabled=!ok;els.replaceModal.classList.add('show');setStatus('');
+    }catch(err){console.error(err);setStatus('');showToast(err?.message||'Unable to read replacement image.','error');}
+  }
+  function applyReplacement(){
+    if(!state.pendingReplacement?.ok)return;state.frames[state.selected].imageData=fitImageData(state.pendingReplacement.imageData,state.width,state.height);state.pendingReplacement=null;els.replaceModal.classList.remove('show');els.replaceInput.value='';renderAll();scheduleAutosave();showToast(`Frame ${state.selected+1} replaced.`,'success');
+  }
+
+  // ---------- UI ----------
+  function averageFrameDelay(){
+    if(!state.frames.length) return 0;
+    let total=0;
+    for(const frame of state.frames) total+=Math.max(10,Number(frame.delay)||100);
+    return Math.round(total/state.frames.length);
+  }
+  function recalcDuration(){
+    state.totalDuration=0;
+    state.frameStarts=new Array(state.frames.length);
+    for(let i=0;i<state.frames.length;i++){
+      state.frameStarts[i]=state.totalDuration;
+      state.totalDuration+=Math.max(10,Number(state.frames[i].delay)||100);
+    }
+  }
+  function setMode(mode){state.mode=mode;els.body.classList.toggle('modify',mode==='modify');els.viewModeBtn.classList.toggle('active',mode==='view');els.modifyModeBtn.classList.toggle('active',mode==='modify');stopPlayback();scheduleAutosave();renderAll();}
+  function drawFrame(index){
+    const frame=state.frames[index];
+    if(!frame || !frame.imageData) return;
+    const d=frame.imageData;
+    const canvas=els.mainCanvas;
+    // Never leave the preview canvas at a stale/zero-sized state. Resizing the
+    // bitmap canvas first guarantees a valid drawing surface for every frame.
+    if(canvas.width!==d.width || canvas.height!==d.height){
+      canvas.width=d.width;
+      canvas.height=d.height;
+    }
+    canvas.hidden=false;
+    els.emptyState.hidden=true;
+    const ctx=canvas.getContext('2d');
+    if(!ctx) return;
+    ctx.save();
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.globalCompositeOperation='copy';
+    ctx.globalAlpha=1;
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.putImageData(d,0,0);
+    ctx.restore();
+  }
+  function renderThumbnails(){
+    els.thumbStrip.innerHTML='';
+    const fragment=document.createDocumentFragment();
+    state.frames.forEach((frame,i)=>{
+      const btn=document.createElement('button');btn.className='thumb'+(i===state.selected?' active':'');btn.type='button';btn.title=`Frame ${i+1}`;btn.dataset.frameIndex=String(i);
+      const c=document.createElement('canvas');c.width=176;c.height=132;const ctx=c.getContext('2d');const src=document.createElement('canvas');src.width=frame.imageData.width;src.height=frame.imageData.height;src.getContext('2d').putImageData(frame.imageData,0,0);const scale=Math.min(c.width/src.width,c.height/src.height);const dw=src.width*scale,dh=src.height*scale;ctx.drawImage(src,(c.width-dw)/2,(c.height-dh)/2,dw,dh);
+      btn.appendChild(c);const label=document.createElement('span');label.className='thumb-label';label.textContent=String(i+1).padStart(2,'0');btn.appendChild(label);btn.addEventListener('click',()=>selectFrame(i));fragment.appendChild(btn);
+    });
+    els.thumbStrip.appendChild(fragment);
+    state.activeThumbEl=els.thumbStrip.children[state.selected]||null;
+    els.stripCount.textContent=`${state.frames.length} frame${state.frames.length===1?'':'s'}`;
+  }
+  function syncThumbnailActive(index, ensureVisible=false){
+    if(index<0 || index>=state.frames.length) return;
+    if(state.activeThumbEl && state.activeThumbEl.dataset.frameIndex===String(index)) return;
+    if(state.activeThumbEl) state.activeThumbEl.classList.remove('active');
+    const active=els.thumbStrip.children[index];
+    if(active){
+      active.classList.add('active');
+      state.activeThumbEl=active;
+      // Never scroll the document as a side effect of playback. This avoids
+      // scroll-linked repaint/flicker while the animation is running.
+      if(ensureVisible){
+        const strip=els.thumbStrip;
+        const left=active.offsetLeft-strip.offsetLeft;
+        const right=left+active.offsetWidth;
+        if(left<strip.scrollLeft) strip.scrollLeft=left-8;
+        else if(right>strip.scrollLeft+strip.clientWidth) strip.scrollLeft=right-strip.clientWidth+8;
+      }
+    }else{
+      state.activeThumbEl=null;
+    }
+  }
+  function selectFrame(index){if(!state.frames[index])return;stopPlayback();state.selected=index;state.currentTime=state.frameStarts[index]??0;els.timeline.value=index;drawFrame(index);renderMeta();syncThumbnailActive(index,true);scheduleEstimateUpdate({animated:false,current:true});}
+  function renderMeta(){
+    const f=state.frames[state.selected];
+    const ratio=state.width?ratioText(state.width,state.height):'—';
+    els.infoFormat.textContent=state.format||'—';els.infoFrames.textContent=state.frames.length?String(state.frames.length):'—';els.infoResolution.textContent=state.width?`${state.width} × ${state.height} px`:'—';els.infoRatio.textContent=ratio;els.infoDuration.textContent=state.frames.length?formatMs(state.totalDuration):'—';els.infoSize.textContent=state.sourceSize?formatImportedFileSize(state.sourceSize):'—';els.infoCurrent.textContent=f?`${state.selected+1} / ${state.frames.length}`:'—';els.infoDelay.textContent=state.frames.length?`${averageFrameDelay()} ms`:'—';els.playerFrameInfo.textContent=f?`Frame ${state.selected+1} • ${f.delay} ms`:'Frame —';els.loopInfo.textContent=state.frames.length?(state.loopCount===0?'Loop ∞':`Loop × ${state.loopCount}`):'Loop —';els.timeReadout.textContent=state.frames.length?`${formatMs(state.currentTime)} / ${formatMs(state.totalDuration)}`:'00:00 / 00:00';els.delayInput.value=f?f.delay:100;els.delayValue.textContent=f?`${f.delay} ms`:'—';els.requiredRatioBadge.textContent=ratio;
+    els.selectedFrameLabel.textContent=f?`${state.selected+1} / ${state.frames.length}`:'—';
+    els.selectedFrameResolution.textContent=f?`${f.imageData.width} × ${f.imageData.height}`:'—';
+    els.selectedFrameRatio.textContent=f?ratioText(f.imageData.width,f.imageData.height):'—';
+    if(els.delayAllBtn) els.delayAllBtn.disabled=!f || state.frames.length<1;
+    els.exportLoop.value=String(state.exportLoopCount);
+    els.exportLoopHint.textContent=state.exportLoopCount===0?'Autoloop ∞':`Loop ${state.exportLoopCount}×`;
+    if(els.exportFormatRadios) els.exportFormatRadios.forEach(r=>{r.checked=r.value===state.exportFormat;});
+    const isWebp=state.exportFormat==='webp';
+    if(els.exportFormatHint) els.exportFormatHint.textContent=isWebp?'WebP • Quality control':'GIF • Original export';
+    if(els.exportAnimatedFormatLabel) els.exportAnimatedFormatLabel.textContent=isWebp?'WebP':'GIF';
+    if(els.webpQualityField) els.webpQualityField.hidden=!isWebp;
+    if(els.webpQuality){ els.webpQuality.value=String(state.webpQuality); els.webpQualityValue.textContent=`${state.webpQuality}%`; els.webpQualityValueSide.textContent=`${state.webpQuality}%`; }
+  }
+  function clearViewport(){
+    const canvas=els.mainCanvas;
+    const ctx=canvas.getContext('2d');
+    if(ctx){ ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,canvas.width||1,canvas.height||1); }
+    canvas.width=1; canvas.height=1;
+    canvas.hidden=true;
+    els.emptyState.hidden=false;
+  }
+  function renderAll(){
+    if(state.frames.length){els.timeline.max=String(state.frames.length-1);els.timeline.value=String(state.selected);drawFrame(state.selected);renderMeta();renderThumbnails();els.fileTitle.textContent=state.sourceName||'Restored Animation';}
+    else{els.timeline.max='0';els.timeline.value='0';clearViewport();els.fileTitle.textContent='No animation loaded';renderMeta();renderThumbnails();}
+    scheduleEstimateUpdate({animated:true,current:true});
+  }
+  function advanceFrame(renderUI=true){
+    if(!state.frames.length)return false;
+    let n=state.selected+1;
+    if(n>=state.frames.length)n=0;
+    state.selected=n;
+    state.currentTime=state.frameStarts[n]??0;
+    els.timeline.value=n;
+    drawFrame(n);
+    if(renderUI){renderMeta();renderThumbnails();}
+    return n===0;
+  }
+  function setPlayButtonIcon(playing){
+    els.playBtn.innerHTML = playing ? '<i class="fa-solid fa-pause" aria-hidden="true"></i>' : '<i class="fa-solid fa-play" aria-hidden="true"></i>';
+    els.playBtn.title = playing ? 'Pause' : 'Play';
+    els.playBtn.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+  }
+  function stopPlayback(){
+    state.playing=false;
+    state.playRemaining=null;
+    clearTimeout(state.playTimer);state.playTimer=null;
+    if(state.playRaf){cancelAnimationFrame(state.playRaf);state.playRaf=0;}
+    state.playFrameStartedAt=0;state.playLastTimestamp=0;state.playbackLoopStartedAt=0;
+    setPlayButtonIcon(false);
+  }
+  function playbackTick(timestamp){
+    if(!state.playing||!state.frames.length)return;
+    const frame=state.frames[state.selected];
+    const delay=Math.max(10,Number(frame.delay)||100);
+    if(!state.playFrameStartedAt)state.playFrameStartedAt=timestamp;
+    let elapsed=timestamp-state.playFrameStartedAt;
+    // Catch up when a frame render or tab scheduling is late, rather than accumulating lag.
+    while(elapsed>=delay&&state.playing){
+      state.playFrameStartedAt+=delay;
+      const wrapped=advanceFrame(false);
+      // Playback only toggles the active thumbnail class; it never invokes
+      // layout-scrolling APIs that can cause the page to flicker.
+      syncThumbnailActive(state.selected,false);
+      if(wrapped){
+        if(state.playRemaining>0){
+          state.playRemaining--;
+          if(state.playRemaining===0){stopPlayback();renderMeta();return;}
+        }
+      }
+      elapsed=timestamp-state.playFrameStartedAt;
+    }
+    state.currentTime=(state.frameStarts[state.selected]??0)+Math.min(elapsed,delay);
+    // Keep the active-frame marker synchronized with playback without rebuilding all thumbnails.
+    els.timeline.value=String(state.selected);
+    syncThumbnailActive(state.selected);
+    els.timeReadout.textContent=`${formatMs(state.currentTime)} / ${formatMs(state.totalDuration)}`;
+    els.playerFrameInfo.textContent=`Frame ${state.selected+1} • ${delay} ms`;
+    els.infoCurrent.textContent=`${state.selected+1} / ${state.frames.length}`;
+    state.playLastTimestamp=timestamp;
+    state.playRaf=requestAnimationFrame(playbackTick);
+  }
+  function startPlayback(){
+    if(!ensureLoaded())return;
+    stopPlayback();
+    recalcDuration();
+    state.playRemaining=state.loopCount===0?0:Math.max(1,Number(state.loopCount));
+    state.playing=true;
+    state.playFrameStartedAt=0;
+    state.playLastTimestamp=0;
+    setPlayButtonIcon(true);
+    state.playRaf=requestAnimationFrame(playbackTick);
+  }
+
+  function setEstimate(el,text){ if(el) el.textContent=text; }
+  function estimateLabel(bytes){ return bytes && Number.isFinite(bytes) ? `Est. ~${formatBytes(bytes)}` : 'Est. —'; }
+  function zipStoredEstimate(fileSizes,names){
+    let total=22;
+    for(let i=0;i<fileSizes.length;i++){
+      const nameBytes=new TextEncoder().encode(names[i]||'frame').length;
+      total += Number(fileSizes[i]||0) + 76 + (nameBytes*2);
+    }
+    return total;
+  }
+  async function sampleFrameBlobSizes(mime,quality=.92){
+    if(!state.frames.length)return [];
+    const count=Math.min(6,state.frames.length);
+    const indices=[];
+    for(let i=0;i<count;i++) indices.push(Math.round(i*(state.frames.length-1)/Math.max(1,count-1)));
+    const unique=[...new Set(indices)];
+    const sizes=[];
+    for(const index of unique){ sizes.push(await canvasBlobForFrame(index,mime,quality)); await nextTick(); }
+    return sizes;
+  }
+  async function estimateCurrentFrameSizes(token){
+    if(!state.frames.length){ setEstimate(els.selectedPngEstimate,'Est. —');setEstimate(els.selectedJpgEstimate,'Est. —');setEstimate(els.pngEstimate,'Est. —');setEstimate(els.jpgEstimate,'Est. —'); return; }
+    setEstimate(els.selectedPngEstimate,'Estimating…');setEstimate(els.selectedJpgEstimate,'Estimating…');setEstimate(els.pngEstimate,'Estimating…');setEstimate(els.jpgEstimate,'Estimating…');
+    try{
+      const [png,jpg]=await Promise.all([canvasBlobForFrame(state.selected,'image/png'),canvasBlobForFrame(state.selected,'image/jpeg')]);
+      if(token!==state.estimateToken)return;
+      const p=png.size,j=jpg.size;
+      setEstimate(els.selectedPngEstimate,estimateLabel(p));setEstimate(els.pngEstimate,estimateLabel(p));
+      setEstimate(els.selectedJpgEstimate,estimateLabel(j));setEstimate(els.jpgEstimate,estimateLabel(j));
+    }catch(err){ console.warn('Current size estimate failed',err); if(token===state.estimateToken){setEstimate(els.selectedPngEstimate,'Est. unavailable');setEstimate(els.selectedJpgEstimate,'Est. unavailable');setEstimate(els.pngEstimate,'Est. unavailable');setEstimate(els.jpgEstimate,'Est. unavailable');} }
+  }
+  async function estimateZipSize(mime,ext){
+    if(!state.frames.length)return null;
+    const blobs=await sampleFrameBlobSizes(mime,mime==='image/jpeg'?0.92:undefined);
+    if(!blobs.length)return null;
+    const avg=blobs.reduce((sum,b)=>sum+b.size,0)/blobs.length;
+    const sizes=state.frames.map(()=>avg);
+    const names=state.frames.map((_,i)=>`${baseName(state.sourceName)}_frame_${String(i+1).padStart(3,'0')}.${ext}`);
+    return zipStoredEstimate(sizes,names);
+  }
+  async function estimateAnimatedGifSize(){
+    if(!state.frames.length)return null;
+    try{
+      const {GIFEncoder,quantize,applyPalette}=await loadGifEncoder();
+      const count=Math.min(6,state.frames.length), indices=[];
+      for(let i=0;i<count;i++)indices.push(Math.round(i*(state.frames.length-1)/Math.max(1,count-1)));
+      const gif=GIFEncoder();
+      const unique=[...new Set(indices)];
+      for(const i of unique){
+        const data=state.frames[i].imageData;
+        const palette=quantize(data.data,256,{format:'rgb565'});
+        const indexed=applyPalette(data.data,palette,'rgb565');
+        gif.writeFrame(indexed,data.width,data.height,{palette,delay:Math.max(10,Number(data.delay)||100),repeat:state.exportLoopCount});
+      }
+      gif.finish();
+      return Math.max(1,Math.round((gif.bytes().length/Math.max(1,unique.length))*state.frames.length));
+    }catch(err){ console.warn('GIF size estimate unavailable',err); return null; }
+  }
+  async function estimateAnimatedWebpSize(){
+    if(!state.frames.length || !HTMLCanvasElement.prototype.toBlob)return null;
+    try{
+      const count=Math.min(6,state.frames.length), indices=[];
+      for(let i=0;i<count;i++)indices.push(Math.round(i*(state.frames.length-1)/Math.max(1,count-1)));
+      const unique=[...new Set(indices)];
+      const encoded=[];
+      for(const i of unique){
+        const bytes=await imageDataToWebpFrame(state.frames[i].imageData,state.webpQuality);
+        const payloadChunks=parseWebpImageChunks(bytes);
+        encoded.push({payloadChunks,hasAlpha:payloadChunks.some(c=>c.type==='ALPH'),duration:Math.max(10,Number(state.frames[i].delay)||100)});
+        await nextTick();
+      }
+      const sample=buildAnimatedWebp(state.width,state.height,encoded,state.exportLoopCount);
+      return Math.max(1,Math.round((sample.length/Math.max(1,unique.length))*state.frames.length));
+    }catch(err){ console.warn('WebP size estimate unavailable',err); return null; }
+  }
+  async function updateAnimatedEstimate(token){
+    if(!state.frames.length){setEstimate(els.animatedEstimate,'Est. —');return;}
+    setEstimate(els.animatedEstimate,'Estimating…');
+    const isWebp=state.exportFormat==='webp';
+    const bytes=isWebp?await estimateAnimatedWebpSize():await estimateAnimatedGifSize();
+    if(token!==state.estimateToken)return;
+    setEstimate(els.animatedEstimate,bytes?estimateLabel(bytes):'Est. unavailable');
+  }
+  function scheduleEstimateUpdate({animated=true,current=true}={}){
+    clearTimeout(state.estimateTimer);
+    state.estimateTimer=setTimeout(async()=>{
+      const token=++state.estimateToken;
+      if(current){ await estimateCurrentFrameSizes(token); if(token!==state.estimateToken)return; }
+      if(!state.frames.length){setEstimate(els.allPngEstimate,'Est. —');setEstimate(els.allJpgEstimate,'Est. —');setEstimate(els.animatedEstimate,'Est. —');return;}
+      setEstimate(els.allPngEstimate,'Estimating…');setEstimate(els.allJpgEstimate,'Estimating…');
+      try{
+        const [pngZip,jpgZip]=await Promise.all([estimateZipSize('image/png','png'),estimateZipSize('image/jpeg','jpg')]);
+        if(token===state.estimateToken){setEstimate(els.allPngEstimate,pngZip?estimateLabel(pngZip):'Est. unavailable');setEstimate(els.allJpgEstimate,jpgZip?estimateLabel(jpgZip):'Est. unavailable');}
+      }catch(err){ console.warn('ZIP size estimate failed',err); if(token===state.estimateToken){setEstimate(els.allPngEstimate,'Est. unavailable');setEstimate(els.allJpgEstimate,'Est. unavailable');} }
+      if(animated) await updateAnimatedEstimate(token);
+    },280);
+  }
+  function canvasBlobForFrame(index,mime,quality=.92){const d=state.frames[index].imageData,c=document.createElement('canvas');c.width=d.width;c.height=d.height;const ctx=c.getContext('2d');if(mime==='image/jpeg'){ctx.fillStyle='#fff';ctx.fillRect(0,0,c.width,c.height);}ctx.putImageData(d,0,0);return new Promise((resolve,reject)=>c.toBlob(b=>b?resolve(b):reject(new Error('Canvas export failed.')),mime,quality));}
+  async function exportCurrent(mime,ext){if(!ensureLoaded())return;const blob=await canvasBlobForFrame(state.selected,mime);downloadBlob(blob,`${baseName(state.sourceName)}_frame_${String(state.selected+1).padStart(3,'0')}.${ext}`);showToast(`Current frame exported as ${ext.toUpperCase()}.`,'success');}
+  async function exportAll(mime,ext){
+    if(!ensureLoaded())return;
+    if(!window.JSZip){showToast('ZIP library could not be loaded.','error');return;}
+    const zip=new window.JSZip();setStatus(`Building ${ext.toUpperCase()} ZIP…`);
+    for(let i=0;i<state.frames.length;i++){
+      const blob=await canvasBlobForFrame(i,mime);
+      zip.file(`${baseName(state.sourceName)}_frame_${String(i+1).padStart(3,'0')}.${ext}`,blob);
+      setStatus(`Building ${ext.toUpperCase()} ZIP… ${i+1} / ${state.frames.length}`);await nextTick();
+    }
+    const out=await zip.generateAsync({type:'blob',compression:'STORE'},meta=>setStatus(`Compressing ZIP… ${Math.round(meta.percent)}%`));
+    downloadBlob(out,`${baseName(state.sourceName)}_frames_${ext}.zip`);setStatus('');showToast(`ZIP exported with ${state.frames.length} ${ext.toUpperCase()} frames.`,'success');
+  }
+  async function loadGifEncoder(){
+    if(state.gifEncoder)return state.gifEncoder;
+    const urls=['https://unpkg.com/gifenc@1.0.3/dist/gifenc.esm.js','https://cdn.jsdelivr.net/npm/gifenc@1.0.3/dist/gifenc.esm.js'];
+    let lastErr=null;
+    for(const url of urls){
+      try{state.gifEncoder=await import(url);return state.gifEncoder;}catch(err){lastErr=err;console.warn('GIF encoder load failed',url,err);}
+    }
+    throw new Error(`GIF encoder could not be loaded${lastErr?.message?`: ${lastErr.message}`:''}.`);
+  }
+  async function exportGif(){
+    if(exportBusy||!ensureLoaded())return;
+    showExportProgress('Processed','Loading GIF encoder…',2);
+    try{
+      const {GIFEncoder,quantize,applyPalette}=await loadGifEncoder();
+      if(typeof GIFEncoder!=='function'||typeof quantize!=='function'||typeof applyPalette!=='function')throw new Error('GIF encoder API is unavailable.');
+      const gif=GIFEncoder();
+      updateExportProgress('Processed',`Encoding GIF frame 0 / ${state.frames.length}…`,4);
+      await nextTick();
+      for(let i=0;i<state.frames.length;i++){
+        const data=state.frames[i].imageData;
+        const palette=quantize(data.data,256,{format:'rgb565'});
+        const indexed=applyPalette(data.data,palette,'rgb565');
+        if(isExportCancelled())throw new Error('__EXPORT_CANCELLED__');
+        gif.writeFrame(indexed,data.width,data.height,{palette,delay:Math.max(10,Number(state.frames[i].delay)||100),repeat:state.exportLoopCount});
+        const pct=5+((i+1)/state.frames.length)*88;
+        updateExportProgress('Processed',`Encoding GIF frame ${i+1} / ${state.frames.length}…`,pct);
+        setStatus(`Encoding animated GIF… ${i+1} / ${state.frames.length}`);
+        await nextTick();
+      }
+      updateExportProgress('Processed','Finalizing animated GIF…',95);
+      await nextTick();
+      gif.finish();
+      updateExportProgress('Processed','Preparing download…',99);
+      await nextTick();
+      downloadBlob(new Blob([gif.bytes()],{type:'image/gif'}),`${baseName(state.sourceName)}_edited.gif`);
+      setStatus('');
+      hideExportProgress();
+      showToast(`Animated GIF exported • Loop ${state.exportLoopCount===0?'∞':state.exportLoopCount+'×'}.`,'success');
+    }catch(err){
+      console.error(err);setStatus('');const cancelled=isExportCancelled()||err?.message==='__EXPORT_CANCELLED__';hideExportProgress({cancelled});if(cancelled)showToast('Animated GIF export cancelled.');else showToast(`Animated GIF export failed: ${err?.message||'encoder error'}`,'error');
+    }
+  }
+  function imageDataToPackedRGBA(imageData){const src=imageData.data,packed=new Uint32Array(imageData.width*imageData.height);for(let i=0,p=0;i<packed.length;i++,p+=4)packed[i]=(((src[p]<<24)|(src[p+1]<<16)|(src[p+2]<<8)|src[p+3])>>>0);return packed;}
+  function writeU24LE(bytes,offset,value){const n=Math.max(0,Math.floor(Number(value)||0));bytes[offset]=n&255;bytes[offset+1]=(n>>>8)&255;bytes[offset+2]=(n>>>16)&255;}
+  function writeU32LE(bytes,offset,value){const n=Math.max(0,Math.floor(Number(value)||0));bytes[offset]=n&255;bytes[offset+1]=(n>>>8)&255;bytes[offset+2]=(n>>>16)&255;bytes[offset+3]=(n>>>24)&255;}
+  function makeChunk(type,data){const pad=data.length&1,out=new Uint8Array(8+data.length+pad);for(let i=0;i<4;i++)out[i]=type.charCodeAt(i);writeU32LE(out,4,data.length);out.set(data,8);return out;}
+  function parseWebpImageChunks(bytes){
+    if(bytes.length<12||readAscii(bytes,0,4)!=='RIFF'||readAscii(bytes,8,4)!=='WEBP')throw new Error('Browser did not return a valid WebP frame.');
+    const chunks=[];let offset=12;
+    while(offset+8<=bytes.length){const type=readAscii(bytes,offset,4),size=readU32LE(bytes,offset+4);offset+=8;if(offset+size>bytes.length)throw new Error('Encoded WebP frame is truncated.');const data=bytes.slice(offset,offset+size);if(type==='ALPH'||type==='VP8 '||type==='VP8L')chunks.push({type,data});offset+=size+(size&1);}
+    if(!chunks.some(c=>c.type==='VP8 '||c.type==='VP8L'))throw new Error('Encoded WebP frame has no image payload.');
+    return chunks;
+  }
+  async function imageDataToWebpFrame(imageData,quality){
+    const canvas=document.createElement('canvas');canvas.width=imageData.width;canvas.height=imageData.height;const ctx=canvas.getContext('2d');ctx.putImageData(imageData,0,0);
+    const q=Math.min(1,Math.max(.1,Number(quality)/100));
+    const blob=await new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error('Browser WebP encoding is unavailable.')),'image/webp',q));
+    return new Uint8Array(await blob.arrayBuffer());
+  }
+  function buildAnimatedWebp(width,height,frames,loopCount){
+    if(!frames.length)throw new Error('No frames were encoded.');
+    const vp8xData=new Uint8Array(10);let hasAlpha=false;for(const f of frames)if(f.hasAlpha){hasAlpha=true;break;}vp8xData[0]=0x02|(hasAlpha?0x10:0);writeU24LE(vp8xData,4,width-1);writeU24LE(vp8xData,7,height-1);
+    const animData=new Uint8Array(6);writeU32LE(animData,0,0);animData[4]=loopCount&255;animData[5]=(loopCount>>>8)&255;
+    const parts=[makeChunk('VP8X',vp8xData),makeChunk('ANIM',animData)];
+    for(const frame of frames){const header=new Uint8Array(16);writeU24LE(header,0,0);writeU24LE(header,3,0);writeU24LE(header,6,width-1);writeU24LE(header,9,height-1);writeU24LE(header,12,Math.min(0xFFFFFF,Math.max(10,Number(frame.duration)||100)));header[15]=0;parts.push(makeChunk('ANMF',concatBytes([header,...frame.payloadChunks.map(c=>makeChunk(c.type,c.data))])));}
+    const body=concatBytes(parts),riff=new Uint8Array(12+body.length);riff.set([0x52,0x49,0x46,0x46],0);writeU32LE(riff,4,4+body.length);riff.set([0x57,0x45,0x42,0x50],8);riff.set(body,12);return riff;
+  }
+  async function exportWebp(){
+    if(exportBusy||!ensureLoaded())return;
+    showExportProgress('Processed',`Preparing WebP export at ${state.webpQuality}% quality…`,2);
+    try{
+      if(!HTMLCanvasElement.prototype.toBlob)throw new Error('This browser does not support canvas WebP encoding.');
+      const encodedFrames=[];
+      for(let i=0;i<state.frames.length;i++){
+        if(isExportCancelled()){hideExportProgress({cancelled:true});setStatus('');showToast('Animated WebP export cancelled.');return;}
+        const frame=state.frames[i];
+        updateExportProgress('Processed',`Encoding WebP frame ${i+1} / ${state.frames.length} at ${state.webpQuality}%…`,5+((i/state.frames.length)*82));
+        const bytes=await imageDataToWebpFrame(frame.imageData,state.webpQuality);
+        if(isExportCancelled()){hideExportProgress({cancelled:true});setStatus('');showToast('Animated WebP export cancelled.');return;}
+        const payloadChunks=parseWebpImageChunks(bytes);encodedFrames.push({payloadChunks,hasAlpha:payloadChunks.some(c=>c.type==='ALPH'),duration:Math.max(10,Number(frame.delay)||100)});
+        updateExportProgress('Processed',`Encoded WebP frame ${i+1} / ${state.frames.length}…`,5+(((i+1)/state.frames.length)*82));
+        setStatus(`Encoding animated WebP… ${i+1} / ${state.frames.length}`);
+        await nextTick();
+      }
+      if(isExportCancelled()){hideExportProgress({cancelled:true});setStatus('');showToast('Animated WebP export cancelled.');return;}
+      updateExportProgress('Processed','Building animated WebP container…',90);await nextTick();
+      const out=buildAnimatedWebp(state.width,state.height,encodedFrames,state.exportLoopCount);
+      if(isExportCancelled()){hideExportProgress({cancelled:true});setStatus('');showToast('Animated WebP export cancelled.');return;}
+      updateExportProgress('Processed','Preparing download…',99);await nextTick();
+      downloadBlob(new Blob([out],{type:'image/webp'}),`${baseName(state.sourceName)}_edited.webp`);
+      setStatus('');hideExportProgress();showToast(`Animated WebP exported • ${state.webpQuality}% quality • Loop ${state.exportLoopCount===0?'∞':state.exportLoopCount+'×'}.`,'success');
+    }catch(err){
+      console.error(err);setStatus('');const cancelled=isExportCancelled();hideExportProgress({cancelled});if(cancelled)showToast('Animated WebP export cancelled.');else showToast(`Animated WebP export failed: ${err?.message||'encoder error'}`,'error');
+    }
+  }
+
+
+
+  async function exportAnimated(){
+    if(state.exportFormat==='webp') return exportWebp();
+    return exportGif();
+  }
+
+  // ---------- Modify actions ----------
+  function mutateDone(message){recalcDuration();renderAll();scheduleAutosave();if(message)showToast(message,'success');}
+  function moveSelected(delta){if(!ensureLoaded())return;const i=state.selected,j=i+delta;if(j<0||j>=state.frames.length)return;const [item]=state.frames.splice(i,1);state.frames.splice(j,0,item);state.selected=j;mutateDone();}
+  function duplicateSelected(){if(!ensureLoaded())return;const source=state.frames[state.selected];state.frames.splice(state.selected+1,0,{imageData:cloneImageData(source.imageData),delay:source.delay});state.selected++;mutateDone('Frame duplicated.');}
+  function deleteSelected(){if(!ensureLoaded())return;if(state.frames.length<=1){showToast('At least one frame must remain.','error');return;}state.frames.splice(state.selected,1);state.selected=Math.min(state.selected,state.frames.length-1);mutateDone('Frame deleted.');}
+  function updateDelay(){if(!ensureLoaded())return;const value=Math.max(10,Math.min(60000,Number(els.delayInput.value)||100));state.frames[state.selected].delay=value;recalcDuration();renderMeta();scheduleAutosave();scheduleEstimateUpdate({animated:true,current:false});}
+  function applyDelayToAll(){
+    if(!ensureLoaded()) return;
+    const value=Math.max(10,Math.min(60000,Number(els.delayInput.value)||100));
+    state.frames.forEach(frame=>{frame.delay=value;});
+    recalcDuration();
+    renderMeta();
+    scheduleAutosave();
+    scheduleEstimateUpdate({animated:true,current:false});
+    showToast(`Applied ${value} ms delay to all ${state.frames.length} frames.`,'success');
+  }
+  function openResetModal(){els.resetModal.classList.add('show');}
+  async function performReset(){
+    els.confirmResetBtn.disabled=true;els.cancelResetBtn.disabled=true;
+    setStatus('Clearing workspace…');
+    stopPlayback();
+    state.saveEpoch++;
+    await clearSessionStorage();
+    state.file=null;state.sourceName='';state.sourceSize=0;state.format='';state.width=0;state.height=0;
+    state.frames=[];state.selected=0;state.activeThumbEl=null;state.totalDuration=0;state.currentTime=0;state.loopCount=0;state.exportLoopCount=0;state.exportFormat='gif';state.webpQuality=100;state.pendingReplacement=null;state.restored=false;
+    if(els.fileInput)els.fileInput.value='';if(els.replaceInput)els.replaceInput.value='';
+    clearViewport();
+    els.resetModal.classList.remove('show');
+    els.confirmResetBtn.disabled=false;els.cancelResetBtn.disabled=false;
+    setStatus('');setSessionStatus('No saved workspace');renderAll();
+    showToast('Workspace cleared.');
+  }
+
+  // ---------- Events ----------
+  els.openBtn.addEventListener('click',()=>els.fileInput.click());els.dropOpenBtn.addEventListener('click',()=>els.fileInput.click());els.fileInput.addEventListener('change',e=>importFile(e.target.files?.[0]));
+  els.dropZone.addEventListener('dragover',e=>{e.preventDefault();els.dropZone.classList.add('drag');});els.dropZone.addEventListener('dragleave',()=>els.dropZone.classList.remove('drag'));els.dropZone.addEventListener('drop',e=>{e.preventDefault();els.dropZone.classList.remove('drag');importFile(e.dataTransfer.files?.[0]);});
+  els.viewModeBtn.addEventListener('click',()=>setMode('view'));els.modifyModeBtn.addEventListener('click',()=>setMode('modify'));els.playBtn.addEventListener('click',()=>state.playing?stopPlayback():startPlayback());els.timeline.addEventListener('input',e=>selectFrame(Number(e.target.value)));els.delayInput.addEventListener('input',updateDelay);els.delayAllBtn.addEventListener('click',applyDelayToAll);
+  els.moveLeftBtn.addEventListener('click',()=>moveSelected(-1));els.moveRightBtn.addEventListener('click',()=>moveSelected(1));els.duplicateBtn.addEventListener('click',duplicateSelected);els.deleteBtn.addEventListener('click',deleteSelected);els.replaceBtn.addEventListener('click',()=>{if(ensureLoaded())els.replaceInput.click();});els.replaceInput.addEventListener('change',e=>loadReplacement(e.target.files?.[0]));
+  els.pngBtn.addEventListener('click',()=>exportCurrent('image/png','png'));els.jpgBtn.addEventListener('click',()=>exportCurrent('image/jpeg','jpg'));els.selectedPngBtn.addEventListener('click',()=>exportCurrent('image/png','png'));els.selectedJpgBtn.addEventListener('click',()=>exportCurrent('image/jpeg','jpg'));els.allPngBtn.addEventListener('click',()=>exportAll('image/png','png'));els.allJpgBtn.addEventListener('click',()=>exportAll('image/jpeg','jpg'));els.exportLoop.addEventListener('change',()=>{state.exportLoopCount=[0,1,2,3].includes(Number(els.exportLoop.value))?Number(els.exportLoop.value):0;scheduleAutosave();renderMeta();scheduleEstimateUpdate({animated:true,current:false});});els.exportFormatRadios.forEach(r=>r.addEventListener('change',()=>{state.exportFormat=r.value==='webp'?'webp':'gif';scheduleAutosave();renderMeta();scheduleEstimateUpdate({animated:true,current:false});}));els.webpQuality.addEventListener('input',()=>{state.webpQuality=Math.min(100,Math.max(10,Number(els.webpQuality.value)||100));els.webpQualityValue.textContent=`${state.webpQuality}%`;els.webpQualityValueSide.textContent=`${state.webpQuality}%`;scheduleAutosave();scheduleEstimateUpdate({animated:true,current:false});});els.exportAnimatedBtn.addEventListener('click',exportAnimated);els.exportCancelBtn.addEventListener('click',requestCancelExport);
+  els.resetBtn.addEventListener('click',openResetModal);els.confirmResetBtn.addEventListener('click',performReset);els.cancelResetBtn.addEventListener('click',()=>els.resetModal.classList.remove('show'));els.closeResetBtn.addEventListener('click',()=>els.resetModal.classList.remove('show'));els.resetModal.addEventListener('click',e=>{if(e.target===els.resetModal)els.resetModal.classList.remove('show');});
+  els.aboutBtn.addEventListener('click',()=>els.aboutModal.classList.add('show'));els.closeAboutBtn.addEventListener('click',()=>els.aboutModal.classList.remove('show'));els.aboutOkBtn.addEventListener('click',()=>els.aboutModal.classList.remove('show'));els.aboutModal.addEventListener('click',e=>{if(e.target===els.aboutModal)els.aboutModal.classList.remove('show');});
+  els.closeReplaceBtn.addEventListener('click',()=>{state.pendingReplacement=null;els.replaceModal.classList.remove('show');});els.cancelReplaceBtn.addEventListener('click',()=>{state.pendingReplacement=null;els.replaceModal.classList.remove('show');});els.applyReplaceBtn.addEventListener('click',applyReplacement);els.replaceModal.addEventListener('click',e=>{if(e.target===els.replaceModal){state.pendingReplacement=null;els.replaceModal.classList.remove('show');}});
+  document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='o'){e.preventDefault();els.fileInput.click();}if(e.key===' '&&document.activeElement?.tagName!=='INPUT'&&document.activeElement?.tagName!=='TEXTAREA'){e.preventDefault();state.playing?stopPlayback():startPlayback();}if(e.key==='Escape'&&!exportBusy){els.aboutModal.classList.remove('show');els.resetModal.classList.remove('show');state.pendingReplacement=null;els.replaceModal.classList.remove('show');}});
+  window.addEventListener('beforeunload',()=>{clearTimeout(state.saveTimer); if(state.frames.length)saveSession().catch(()=>{});});
+
+  setPlayButtonIcon(false);
+  renderAll();setSessionStatus('Checking local autosave…');restoreSession().then(ok=>{if(!ok)setSessionStatus('No saved workspace');});
+</script>
+</body>
+</html>
